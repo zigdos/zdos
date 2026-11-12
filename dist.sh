@@ -99,5 +99,5 @@ for name in uefi-x86_64 bios-x86 uefi-arm64 metal-x86_64 metal-arm64 usb-uefi-x8
     zip -qr zdos-$VERSION-$name.zip zdos-$VERSION-$name
     rm -rf zdos-$VERSION-$name
 done
-sha256sum zdos-$VERSION-*.zip > SHA256SUMS
-echo "Made dist/zdos-$VERSION-*.zip and dist/SHA256SUMS"
+sha256sum zdos-$VERSION-*.zip > SHA256SUMS-$VERSION-ZDOS
+echo "Made dist/zdos-$VERSION-*.zip and dist/SHA256SUMS-$VERSION-ZDOS"

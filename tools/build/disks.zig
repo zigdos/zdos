@@ -181,8 +181,8 @@ fn mkext2(img: []const u8, label: []const u8, kib: u32) void {
 
 // RELEASE ZIPS
 
-// With SHA256SUMS. Each is put together in a folder of its name,
-// removed once zipped.
+// With SHA256SUMS-<version>-ZDOS. Each is put together in a
+// folder of its name, removed once zipped.
 fn release(version: []const u8, rpi4_firmware: []const u8) void {
     var sums = std.ArrayList(u8).init(files.gpa);
 
@@ -215,7 +215,7 @@ fn release(version: []const u8, rpi4_firmware: []const u8) void {
         zip(dir, &sums);
     }
 
-    files.write("dist/SHA256SUMS", sums.items);
+    files.write(fmt("dist/SHA256SUMS-{s}-ZDOS", .{version}), sums.items);
 }
 
 // Notes the checksum in sums, and removes the folder.

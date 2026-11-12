@@ -145,7 +145,7 @@ ZDOS's test suites are in `tests/`; each script's header gives its usage.
 ### Releases
 
 ```sh
-zig build dist -Dversion=0.1     # dist/: the zips and SHA256SUMS
+zig build dist -Dversion=0.1     # dist/: the zips and SHA256SUMS-0.1-ZDOS
 ./dist.sh 0.1                 # the same with plain commands, from what ./build.sh built (Linux)
 ```
 
