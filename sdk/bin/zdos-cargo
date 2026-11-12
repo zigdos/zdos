@@ -1,0 +1,292 @@
+#!/usr/bin/env bash
+# zdos-cargo: cargo for Rust programs with the full std, for the CPU's
+# musl target and linked against ZDOS's C library:
+#   zdos-cargo [--arch=arm64|x86] [--small] build --release | new NAME | ...
+# --small: std rebuilt on nightly without backtraces, panics abort
+# (rustup toolchain install nightly --component rust-src).
+# As cargo's linker (ZDOS_CARGO_LINK set) it links with libzdos.a and
+# Rust's libunwind; Rust functions whose musl ABI differs from ZDOS's
+# are renamed to their __zdos_musl_* forms (zdos_musl.c).
+set -euo pipefail
+
+self=$(readlink -f "$0")
+SDK=$(cd "$(dirname "$self")/.." && pwd)
+cache_root=${ZDOS_SDK_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/zdos-sdk}
+me=zdos-cargo
+
+triple_of() {
+    case $1 in
+        x86_64) echo x86_64-unknown-linux-musl ;;
+        arm64) echo aarch64-unknown-linux-musl ;;
+        x86) echo i686-unknown-linux-musl ;;
+        riscv64) echo riscv64gc-unknown-linux-musl ;;
+    esac
+}
+
+# rust-objcopy: llvm-objcopy
+rust_tool() {
+    local sysroot
+    sysroot=$("${RUSTC:-rustc}" --print sysroot)
+    local t
+    for t in "$sysroot"/lib/rustlib/*/bin/"$1"; do
+        [ -x "$t" ] && { echo "$t"; return; }
+    done
+    echo "$me: $1 not found in the Rust toolchain ($sysroot)" >&2
+    exit 1
+}
+
+# The functions zdos_musl.c adapts for this CPU,
+# for rust-objcopy --redefine-syms; x86 also renames main (zdos_musl_main
+# realigns the stack for it).
+rename_list() {
+    local arch=$1 dir=$cache_root/rust/$arch
+    local list=$dir/musl.syms
+    if [ -f "$list" ] && [ -z "$(find "$SDK/src/zdos_musl.c" "$self" -newer "$list" -print -quit)" ]; then
+        echo "$list"
+        return
+    fi
+    mkdir -p "$dir"
+    local tmp
+    tmp=$(mktemp "$dir/syms.XXXXXX")
+    "$SDK/bin/zdos-cc" --arch="$arch" -E -P "$SDK/src/zdos_musl.c" |
+        grep -oE '\b__zdos_musl_[A-Za-z0-9_]+ *\(' | sed 's/ *($//' | sort -u |
+        sed 's/^__zdos_musl_\(.*\)$/\1 __zdos_musl_\1/' > "$tmp"
+    [ "$arch" = x86 ] && echo "main __zdos_rust_main" >> "$tmp"
+    mv -f "$tmp" "$list"
+    echo "$list"
+}
+
+# Zig's compiler-rt for the math libzdos.a leaves to it (sin, cos ...), as zig
+# cc gives it. Its symbols are weak: compiler_builtins keeps its own.
+compiler_rt() {
+    local arch=$1 dir=$cache_root/rust/$arch
+    local lib=$dir/libcompiler_rt.a
+    if [ -f "$lib" ] && [ -z "$(find "$self" -newer "$lib" -print -quit)" ]; then
+        echo "$lib"
+        return
+    fi
+    mkdir -p "$dir"
+    local zig_lib target
+    zig_lib=$(zig env | sed -n 's/^ *"lib_dir": "\(.*\)",$/\1/p')
+    case $arch in
+        x86) target=(-target x86-freestanding -mcpu=i686) ;;
+        x86_64) target=(-target x86_64-freestanding) ;;
+        arm64) target=(-target aarch64-freestanding) ;;
+    esac
+    local tmp
+    tmp=$(mktemp -d "$dir/rt.XXXXXX")
+    zig build-lib "${target[@]}" -O ReleaseSmall -fPIC -fno-emit-h --name compiler_rt \
+        --cache-dir "$tmp/cache" "$zig_lib/compiler_rt.zig" -femit-bin="$tmp/libcompiler_rt.a" >&2
+    mv -f "$tmp/libcompiler_rt.a" "$lib"
+    rm -rf "$tmp"
+    echo "$lib"
+}
+
+# LINKING (cargo calls this as the linker)
+link() {
+    local arch=$ZDOS_CARGO_LINK
+    local triple
+    triple=$(triple_of "$arch")
+    local cache=$cache_root/$arch
+    local syms
+    syms=$(rename_list "$arch")
+    local rt
+    rt=$(compiler_rt "$arch")
+    local objcopy
+    objcopy=$(rust_tool rust-objcopy)
+    tmp=$(mktemp -d "${TMPDIR:-/tmp}/zdos-cargo.XXXXXX")
+    trap 'rm -rf "$tmp"' EXIT
+
+    local args=() out= rustlib= n=0 a
+    while [ $# -gt 0 ]; do
+        a=$1
+        shift
+        case $a in
+            -m64 | -m32 | -static-pie | -static | -pie | -no-pie | -nodefaultlibs | -nostartfiles | -nostdlib | \
+                -fuse-ld=* | -B* | -lgcc_s | -lgcc_eh | -lgcc | -lm | -lpthread | -ldl | -lrt | -lutil) ;;
+            -o) out=$1; shift; args+=(-o "$out") ;;
+            -L)
+                case $1 in */lib/rustlib/"$triple"/lib) rustlib=$1 ;; esac
+                args+=(-L "$1")
+                shift
+                ;;
+            -Wl,*)
+                local w
+                IFS=, read -ra w <<< "${a#-Wl,}"
+                args+=("${w[@]}")
+                ;;
+            *.rlib | *.o)
+                n=$((n + 1))
+                args+=("$(renamed "$a" "$tmp/$n" "$syms" "$objcopy")")
+                ;;
+            *) args+=("$a") ;;
+        esac
+    done
+    if [ -z "$rustlib" ]; then
+        echo "$me: no -L <sysroot>/lib/rustlib/$triple/lib among the linker's arguments" >&2
+        exit 1
+    fi
+    # libc is ZDOS's C library; libunwind Rust's own (it finds the
+    # tables through dl_iterate_phdr):
+    mkdir -p "$tmp/lib"
+    ln -s "$cache/libzdos.a" "$tmp/lib/libc.a"
+    ln -s "$rustlib/self-contained/libunwind.a" "$tmp/lib/libunwind.a"
+    local extra=()
+    [ "$arch" = x86 ] && extra=(--defsym=main=zdos_musl_main)
+    zig ld.lld -pie --no-dynamic-linker -e zdos_entry -T "$SDK/linkers/app-$arch.ld" \
+        -u __cxa_thread_atexit_impl ${extra[@]+"${extra[@]}"} "$cache/crt0.o" "${args[@]}" -L "$tmp/lib" "$rt"
+    local type
+    type=$(od -An -tu2 -j16 -N2 "$out" | tr -d ' ')
+    if [ "$type" != 3 ]; then
+        echo "$me: $out is not position-independent" >&2
+        exit 1
+    fi
+}
+
+# Only an rlib's *.rcgu.o members: native objects keep ZDOS's ABI. The
+# toolchain's own rlibs are cached.
+renamed() {
+    local in=$1 work=$2 syms=$3 objcopy=$4
+    case $in in
+        *.o)
+            "$objcopy" --redefine-syms="$syms" "$in" "$work.o"
+            echo "$work.o"
+            return
+            ;;
+    esac
+    local keep=
+    case $in in
+        */lib/rustlib/*)
+            local key
+            key=$(printf '%s %s %s' "$in" "$(stat -c %Y "$in" 2>/dev/null || stat -f %m "$in")" "$(cksum < "$syms")" |
+                cksum | tr -d ' ')
+            keep=$cache_root/rust/$ZDOS_CARGO_LINK/rlib/$key-$(basename "$in")
+            if [ -f "$keep" ]; then
+                echo "$keep"
+                return
+            fi
+            ;;
+    esac
+    mkdir -p "$work"
+    (cd "$work" && zig ar x "$in")
+    local m members=()
+    while IFS= read -r m; do
+        members+=("$m")
+        case $m in *.rcgu.o) "$objcopy" --redefine-syms="$syms" "$work/$m" ;; esac
+    done < <(zig ar t "$in")
+    (cd "$work" && zig ar rcs "$work.rlib" "${members[@]}")
+    if [ -n "$keep" ]; then
+        mkdir -p "$(dirname "$keep")"
+        mv -f "$work.rlib" "$keep.$$" && mv -f "$keep.$$" "$keep"
+        echo "$keep"
+    else
+        echo "$work.rlib"
+    fi
+}
+
+if [ -n "${ZDOS_CARGO_LINK:-}" ]; then
+    link "$@"
+    exit 0
+fi
+
+# CARGO
+arch=${ZDOS_ARCH:-x86_64}
+small=0
+while [ $# -gt 0 ]; do
+    case $1 in
+        --arch=*) arch=${1#--arch=}; shift ;;
+        --small) small=1; shift ;;
+        *) break ;;
+    esac
+done
+case $arch in
+    x86 | i386 | i686) arch=x86 ;;
+    x86_64 | amd64) arch=x86_64 ;;
+    arm64 | aarch64) arch=arm64 ;;
+    riscv64 | riscv) arch=riscv64 ;;
+    *) echo "$me: unknown CPU $arch (x86, x86_64, arm64, riscv64)" >&2; exit 1 ;;
+esac
+triple=$(triple_of "$arch")
+
+if [ "${1:-}" = new ]; then
+    [ $# -eq 2 ] || { echo "usage: $me new NAME" >&2; exit 1; }
+    [ -e "$2" ] && { echo "$me: $2 exists" >&2; exit 1; }
+    cp -r "$SDK/rust/template" "$2"
+    name=$(basename "$2")
+    sed -i.bak "s/^name = \"template\"/name = \"$name\"/; s|path = \"../zdos\"|path = \"$SDK/rust/zdos\"|" "$2/Cargo.toml"
+    rm -f "$2/Cargo.toml.bak"
+    echo "$me: made $2 (zdos-cargo build --release in it)"
+    exit 0
+fi
+
+# --small: nightly's std sources, built for the target with
+# panic=abort and without std's default features (backtrace):
+zflags=()
+toolchain=
+if [ $small = 1 ]; then
+    export RUSTUP_TOOLCHAIN=${RUSTUP_TOOLCHAIN:-nightly}
+    toolchain=" --toolchain $RUSTUP_TOOLCHAIN"
+    if ! rustup component list --installed 2>/dev/null | grep -qx rust-src; then
+        echo "$me: --small needs nightly's std sources: rustup toolchain install nightly --component rust-src" >&2
+        exit 1
+    fi
+    export CARGO_PROFILE_RELEASE_PANIC=abort CARGO_PROFILE_DEV_PANIC=abort
+    zflags=(-Zbuild-std=std,panic_abort -Zbuild-std-features=)
+fi
+
+if ! rustup target list --installed 2>/dev/null | grep -qx "$triple"; then
+    echo "$me: the Rust target $triple is missing: rustup target add$toolchain $triple" >&2
+    exit 1
+fi
+
+T=$(echo "$triple" | tr 'a-z-' 'A-Z_')
+export CARGO_TARGET_${T}_LINKER="$self"
+# Self-contained musl stays out; crates' C sources go through zdos-cc:
+flags=CARGO_TARGET_${T}_RUSTFLAGS
+export "$flags=-C link-self-contained=no -C target-feature=+crt-static ${!flags:-}"
+export CC_${triple//-/_}="${ZDOS_CC:-$SDK/bin/zdos-cc}" AR_${triple//-/_}="$SDK/bin/zdos-ar"
+export CXX_${triple//-/_}="${ZDOS_CXX:-$SDK/bin/zdos-c++}"
+export ZDOS_ARCH=$arch
+# Examples built inside the SDK keep cargo's target out of it:
+case $PWD/ in
+    "$SDK"/*) export CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-$cache_root/target/${PWD#"$SDK"/}} ;;
+esac
+
+cmd=${1:-}
+if [ "$arch" = riscv64 ]; then
+    case $cmd in
+        check | clippy | doc | metadata | tree | fetch) exec cargo "$@" --target "$triple" ;;
+        *) echo "$me: no ZDOS for RISC-V yet: only check, clippy, doc" >&2; exit 1 ;;
+    esac
+fi
+
+# libzdos.a and crt0.o for this CPU, as zdos-cc makes and caches them:
+cache=$cache_root/$arch
+probe=$(mktemp -d "${TMPDIR:-/tmp}/zdos-cargo.XXXXXX")
+echo 'int main(void) { return 0; }' > "$probe/t.c"
+"$SDK/bin/zdos-cc" --arch="$arch" "$probe/t.c" -o "$probe/t" || { rm -rf "$probe"; exit 1; }
+rm -rf "$probe"
+
+case $cmd in
+    build | b | rustc)
+        shift
+        # cargo runs this script again as the linker (ZDOS_CARGO_LINK says the
+        # CPU); the .APP files follow from cargo's report:
+        log=$(mktemp "${TMPDIR:-/tmp}/zdos-cargo.XXXXXX")
+        status=0
+        ZDOS_CARGO_LINK=$arch cargo ${zflags[@]+"${zflags[@]}"} "$cmd" --target "$triple" --message-format=json-render-diagnostics "$@" > "$log" ||
+            status=$?
+        if [ $status = 0 ]; then
+            sed -n 's/.*"executable":"\([^"]*\)".*/\1/p' "$log" | while IFS= read -r elf; do
+                app=$(dirname "$elf")/$(basename "$elf" | tr 'a-z' 'A-Z').APP
+                zig objcopy -O binary "$elf" "$app"
+                echo "    Finished $app ($(wc -c < "$app" | tr -d ' ') bytes)" >&2
+            done
+        fi
+        rm -f "$log"
+        exit $status
+        ;;
+    *)
+        ZDOS_CARGO_LINK=$arch exec cargo ${zflags[@]+"${zflags[@]}"} "$@" --target "$triple"
+        ;;
+esac

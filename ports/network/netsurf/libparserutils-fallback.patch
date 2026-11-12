@@ -1,0 +1,32 @@
+--- a/libparserutils/src/charset/codec.c	2026-11-03 23:39:39.491801211 -0300
++++ b/libparserutils/src/charset/codec.c	2026-11-03 23:39:39.502818599 -0300
+@@ -58,9 +58,26 @@
+ 			break;
+ 	}
+ 
+-	/* None found */
+-	if ((*handler) == NULL)
+-		return PARSERUTILS_BADENCODING;
++	/* None found: a known charset without a decoder here (Shift_JIS,
++	 * GBK, Big5 ... on ZDOS, which has no iconv for them) is read as
++	 * US-ASCII, every other byte becoming U+FFFD (the codec is loose):
++	 * the text in ASCII shows, the rest as replacement characters,
++	 * rather than the whole page or stylesheet failing */
++	if ((*handler) == NULL) {
++		for (handler = handler_table; *handler != NULL; handler++) {
++			if ((*handler)->handles_charset("US-ASCII"))
++				break;
++		}
++		if ((*handler) == NULL)
++			return PARSERUTILS_BADENCODING;
++		error = (*handler)->create("US-ASCII", &c);
++		if (error != PARSERUTILS_OK)
++			return error;
++		c->mibenum = canon->mib_enum;
++		c->errormode = PARSERUTILS_CHARSET_CODEC_ERROR_LOOSE;
++		*codec = c;
++		return PARSERUTILS_OK;
++	}
+ 
+ 	/* Instantiate class */
+ 	error = (*handler)->create(canon->name, &c);

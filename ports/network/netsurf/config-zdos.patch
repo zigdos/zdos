@@ -1,0 +1,22 @@
+--- a/netsurf/utils/config.h
++++ b/netsurf/utils/config.h
+@@ -48,7 +48,7 @@
+ #if ((defined(_GNU_SOURCE) ||			\
+       defined(__APPLE__) ||			\
+       defined(__HAIKU__) ||			\
+-      defined(__NetBSD__) ||			\
++      defined(__NetBSD__) || defined(__zdos__) ||	\
+       defined(__OpenBSD__)) &&			\
+      !defined(__serenity__))
+ #define HAVE_STRCASESTR
+--- a/netsurf/desktop/options.h
++++ b/netsurf/desktop/options.h
+@@ -121,7 +121,7 @@
+ NSOPTION_BOOL(animate_images, true)
+ 
+ /** Whether to execute javascript */
+-NSOPTION_BOOL(enable_javascript, false)
++NSOPTION_BOOL(enable_javascript, true)
+ 
+ /** Whether to allow Author level CSS. */
+ NSOPTION_BOOL(author_level_css, true)

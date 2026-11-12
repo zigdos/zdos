@@ -1,0 +1,230 @@
+--- a/unix/sw_draw.c
++++ b/unix/sw_draw.c
+@@ -30,6 +30,187 @@
+ void NTSCFilterDraw(int SurfaceX, int SurfaceY, int pitch, unsigned char* buffer);
+ char CheckOGLMode(void);
+ 
++#ifdef __zdos__
++#include "zdos.h"
++
++// BIOS: VGA MODE 13H, 256 X 200 OF THE PICTURE IN 256 COLORS
++
++extern uint16_t resolutn;
++static int vga_on = -1; // -1: not known yet
++static u1 vga_pic[256 * 200];
++static u1 vga_rgb[256 * 3];
++static u1 vga_slot[65536]; // a color's palette entry
++static u2 vga_seen[65536]; // the frame it was last in
++static u2 vga_count[65536];
++static u2 vga_list[256 * 200];
++static u2 vga_color[256]; // an entry's color
++static u2 vga_used[256]; // the frame it was last used in
++static u1 vga_near[4096]; // per 4-4-4 color: the nearest entry
++static u2 vga_near_seen[4096];
++static u2 vga_frame;
++
++static int vga_mode(void)
++{
++    zdos_screen_info s;
++
++    if (vga_on < 0) {
++        vga_on = zdos->gfx->screen(&s) && !s.true_color;
++    }
++    return vga_on;
++}
++
++static void vga_start(void)
++{
++    // SDL's framebuffer sets the mouse's area, then 13h:
++    SDL_GetWindowSurface(sdl_window);
++    zdos->gfx->begin(256, 200);
++    memset(vga_rgb, 0, sizeof(vga_rgb));
++    memset(vga_color, 0, sizeof(vga_color));
++}
++
++static int vga_by_count(void const* a, void const* b)
++{
++    return vga_count[*(u2 const*)b] - vga_count[*(u2 const*)a];
++}
++
++static int vga_dist(u2 const a, u2 const b)
++{
++    int const r = ((a >> 11) - (b >> 11)) * 2;
++    int const g = ((a >> 5) & 63) - ((b >> 5) & 63);
++    int const bl = ((a & 31) - (b & 31)) * 2;
++
++    return 2 * r * r + 4 * g * g + 3 * bl * bl;
++}
++
++static u1 vga_nearest(u2 const c, int const keep)
++{
++    int best = vga_dist(c, 0);
++    u1 s = 0;
++    int i;
++
++    for (i = 0; i < keep; i++) {
++        int const d = vga_dist(c, vga_list[i]);
++
++        if (d < best) {
++            best = d;
++            s = vga_slot[vga_list[i]];
++        }
++    }
++    return s;
++}
++
++/* 200 lines of 565 pixels (VID_STRIDE apart) as palette entries: exact
++   up to 255 colors and black, beyond that the 255 most frequent */
++static void vga_show(u2 const* const src)
++{
++    u2 const* row;
++    u1* out = vga_pic;
++    u2 f;
++    int n = 0, keep, i, s, x, y, lo = 256, hi = -1, free1 = 1, free2 = 1;
++
++    if (++vga_frame == 0) {
++        memset(vga_seen, 0, sizeof(vga_seen));
++        memset(vga_used, 0, sizeof(vga_used));
++        memset(vga_near_seen, 0, sizeof(vga_near_seen));
++        vga_frame = 2;
++    }
++    f = vga_frame;
++    // the colors and their counts, black always entry 0:
++    vga_seen[0] = f;
++    for (y = 0, row = src; y < 200; y++, row += VID_STRIDE) {
++        for (x = 0; x < 256; x++) {
++            u2 const c = row[x];
++
++            if (vga_seen[c] != f) {
++                vga_seen[c] = f;
++                vga_count[c] = 0;
++                vga_list[n++] = c;
++            }
++            vga_count[c]++;
++        }
++    }
++    keep = n;
++    if (n > 255) {
++        qsort(vga_list, n, sizeof(*vga_list), vga_by_count);
++        keep = 255;
++    }
++    // colors with an entry keep it:
++    for (i = 0; i < keep; i++) {
++        s = vga_slot[vga_list[i]];
++        if (s != 0 && vga_color[s] == vga_list[i]) {
++            vga_used[s] = f;
++        }
++    }
++    // new ones, if possible in entries the last frame didn't use:
++    for (i = 0; i < keep; i++) {
++        u2 const c = vga_list[i];
++
++        s = vga_slot[c];
++        if (s != 0 && vga_color[s] == c) {
++            continue;
++        }
++        while (free1 < 256
++            && (vga_used[free1] == f || vga_used[free1] == (u2)(f - 1))) {
++            free1++;
++        }
++        if (free1 < 256) {
++            s = free1++;
++        } else {
++            while (vga_used[free2] == f) {
++                free2++;
++            }
++            s = free2++;
++        }
++        vga_slot[c] = (u1)s;
++        vga_color[s] = c;
++        vga_used[s] = f;
++        vga_rgb[s * 3] = (u1)((c >> 11) << 3 | c >> 13);
++        vga_rgb[s * 3 + 1] = (u1)(((c >> 5) & 63) << 2 | ((c >> 9) & 3));
++        vga_rgb[s * 3 + 2] = (u1)((c & 31) << 3 | ((c >> 2) & 7));
++        lo = s < lo ? s : lo;
++        hi = s > hi ? s : hi;
++    }
++    // the rest: the nearest of those:
++    for (i = keep; i < n; i++) {
++        u2 const c = vga_list[i];
++        int const k = (c >> 12) << 8 | ((c >> 7) & 15) << 4 | ((c >> 1) & 15);
++
++        if (vga_near_seen[k] != f) {
++            vga_near_seen[k] = f;
++            vga_near[k] = vga_nearest(c, keep);
++        }
++        vga_slot[c] = vga_near[k];
++    }
++    for (y = 0, row = src; y < 200; y++, row += VID_STRIDE) {
++        for (x = 0; x < 256; x++) {
++            *out++ = vga_slot[row[x]];
++        }
++    }
++    if (hi >= lo) {
++        zdos->gfx->palette((uint32_t)lo, (uint32_t)(hi - lo + 1),
++            vga_rgb + lo * 3);
++    }
++    zdos->gfx->draw(vga_pic);
++}
++
++/* The middle 200 of the 224 lines; the GUI's 224 follow the mouse, the
++   menu bar on the screen while it is at the top */
++static void vga_draw(void)
++{
++    u2 const* src = (u2 const*)vidbuffer + VID_FIRST;
++    int top = 12;
++
++    if (resolutn == 239) {
++        src += 8 * VID_STRIDE;
++    }
++    if (GUIOn2) {
++        top = GetMouseY() * 23 / 223;
++        top = top < 0 ? 0 : top > 23 ? 23 : top;
++    }
++    vga_show(src + top * VID_STRIDE);
++}
++#endif
++
+ int sw_start(int width, int height, int req_depth, int FullScreen)
+ {
+     uint32_t flags = 0;
+@@ -82,6 +263,11 @@
+ 
+     // Always RGB565
+     converta = 0;
++#ifdef __zdos__
++    if (vga_mode()) {
++        vga_start();
++    }
++#endif
+ 
+     return 1;
+ }
+@@ -202,6 +388,13 @@
+ 
+ void sw_clearwin(void)
+ {
++#ifdef __zdos__
++    if (vga_mode()) {
++        memset(vga_pic, 0, sizeof(vga_pic));
++        zdos->gfx->draw(vga_pic);
++        return;
++    }
++#endif
+     pitch = surface->pitch;
+     SurfBufD = surface->pixels;
+ 
+@@ -234,6 +427,13 @@
+         }
+     }
+ 
++#ifdef __zdos__
++    if (vga_mode()) {
++        vga_draw();
++        return;
++    }
++#endif
++
+     /* A filter draws at its own size and is scaled to the window, so every
+        filter is available in every video mode rather than only in the one
+        whose surface happened to match. */

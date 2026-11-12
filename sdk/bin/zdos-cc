@@ -1,0 +1,254 @@
+#!/usr/bin/env bash
+# zdos-cc: zig cc with ZDOS's target, headers, C library and linker script,
+# so Makefiles and configure scripts work unchanged.
+# The CPU: --arch= first, else ZDOS_ARCH, else the command's name
+# (i686-, x86_64-, aarch64-zdos-cc), else x86_64. libzdos.a and the C++
+# libraries are cached per CPU in ZDOS_SDK_CACHE (~/.cache/zdos-sdk).
+set -euo pipefail
+
+# zdos-c++ passes its own:
+me=${ZDOS_CC_NAME:-$(basename "$0")}
+unset ZDOS_CC_NAME
+self=$(readlink -f "$0")
+SDK=$(cd "$(dirname "$self")/.." && pwd)
+
+arch=${ZDOS_ARCH:-}
+case ${1:-} in
+    --arch=*) arch=${1#--arch=}; shift ;;
+esac
+if [ -z "$arch" ]; then
+    case $me in
+        i?86-* | x86-*) arch=x86 ;;
+        aarch64-* | arm64-*) arch=arm64 ;;
+        *) arch=x86_64 ;;
+    esac
+fi
+case $arch in
+    x86 | i386 | i686) arch=x86 target="-target x86-freestanding -mcpu=i686" ;;
+    x86_64 | amd64) arch=x86_64 target="-target x86_64-freestanding -mno-red-zone" ;;
+    arm64 | aarch64) arch=arm64 target="-target aarch64-freestanding" ;;
+    *) echo "$me: unknown CPU $arch (x86, x86_64, arm64)" >&2; exit 1 ;;
+esac
+linker=$SDK/linkers/app-$arch.ld
+
+# ELF -> the flat .APP ZDOS loads
+to_app() {
+    local type
+    type=$(od -An -tu2 -j16 -N2 "$1" | tr -d ' ')
+    if [ "$type" != 3 ]; then
+        echo "$me: $1 is not a ZDOS program linked by zdos-cc (not position-independent)" >&2
+        exit 1
+    fi
+    zig objcopy -O binary "$1" "$2"
+}
+
+if [ "${1:-}" = --app ]; then
+    [ $# -eq 3 ] || { echo "usage: $me --app PROGRAM PROGRAM.APP" >&2; exit 1; }
+    to_app "$2" "$3"
+    exit 0
+fi
+
+# PIE: ZDOS loads programs anywhere; no stack protector: no guard
+# value to check; the SDK's headers before the compiler's.
+cflags=($target -ffreestanding -fPIE -fno-stack-protector -fno-asynchronous-unwind-tables -fno-unwind-tables -D__zdos__=1
+    -I"$SDK/compat" -I"$SDK/src")
+
+# Made when missing or older than the SDK, in a folder of its own and
+# then moved, so parallel makes don't collide.
+library() {
+    local cache=${ZDOS_SDK_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/zdos-sdk}/$arch
+    local stamp=$cache/sdk-path
+    if [ -f "$cache/libzdos.a" ] && [ "$(cat "$stamp" 2>/dev/null)" = "$SDK" ] &&
+        [ -z "$(find "$SDK/src" "$SDK/compat" "$self" -newer "$cache/libzdos.a" -print -quit)" ]; then
+        return
+    fi
+    mkdir -p "$cache"
+    local tmp
+    tmp=$(mktemp -d "$cache/build.XXXXXX")
+    local src
+    # Sections per function: --gc-sections links (C++, Rust) keep
+    # only what is used:
+    for src in "$SDK"/src/*.c; do
+        zig cc "${cflags[@]}" -Os -ffunction-sections -fdata-sections -c "$src" -o "$tmp/$(basename "$src" .c).o"
+    done
+    # NetBSD's math (src/libm/README.md says why these flags):
+    for src in "$SDK"/src/libm/*.c; do
+        # x86: NetBSD's rint / lrint family is zdos_math_x87.c's instead:
+        if [ $arch = x86 ]; then
+            case $(basename "$src") in s_rint.c | s_rintf.c | lrint.c | lrintf.c | llrint.c | llrintf.c) continue ;; esac
+        fi
+        zig cc "${cflags[@]}" -Os -fno-builtin -D_IEEE_LIBM -D__HAVE_LONG_DOUBLE -include sys/cdefs.h -include endian.h \
+            -I"$SDK/src/libm" -w -c "$src" -o "$tmp/zdos_m_$(basename "$src" .c).o"
+    done
+    # long double math: musl's and FreeBSD's:
+    for src in "$SDK"/src/libml/*.c; do
+        zig cc "${cflags[@]}" -Os -c "$src" -o "$tmp/zdos_ml_$(basename "$src" .c).o"
+    done
+    mv "$tmp/zdos_crt0.o" "$tmp/crt0.o"
+    zig ar rcs "$tmp/libzdos.a" "$tmp"/zdos_*.o
+    mv -f "$tmp/crt0.o" "$cache/crt0.o"
+    mv -f "$tmp/libzdos.a" "$cache/libzdos.a"
+    echo "$SDK" > "$stamp"
+    rm -rf "$tmp"
+}
+
+# C++: Zig's libc++, libc++abi and libunwind (LLVM 19), compiled hosted
+# (freestanding switches libc++ off). cxx_config must be the same for
+# the libraries and the programs.
+zig_lib=$(zig env | sed -n 's/^ *"lib_dir": "\(.*\)",$/\1/p')
+cxx_config=(-D_LIBCPP_ABI_VERSION=1 -D_LIBCPP_ABI_NAMESPACE=__1 -D_LIBCPP_HAS_NO_VENDOR_AVAILABILITY_ANNOTATIONS
+    -D_LIBCPP_DISABLE_VISIBILITY_ANNOTATIONS -D_LIBCXXABI_DISABLE_VISIBILITY_ANNOTATIONS -D_LIBCPP_PSTL_BACKEND_SERIAL
+    -D_LIBCPP_HARDENING_MODE_DEFAULT=_LIBCPP_HARDENING_MODE_NONE -D_LIBCPP_HAS_THREAD_API_PTHREAD
+    -D_LIBCPP_PROVIDES_DEFAULT_RUNE_TABLE -D_LIBCPP_USING_GETENTROPY -D_LIBCPP_HAS_NO_TIME_ZONE_DATABASE)
+cxxbase=($target -fhosted -fPIE -fno-stack-protector -D__zdos__=1 -nostdinc++ -I"$zig_lib/libcxx/include"
+    -I"$zig_lib/libcxxabi/include" -I"$SDK/compat" -I"$SDK/src" "${cxx_config[@]}")
+cxxflags=("${cxxbase[@]}" -fno-asynchronous-unwind-tables -fno-unwind-tables -fexceptions -frtti)
+
+cxx_libraries() {
+    local cache=${ZDOS_SDK_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/zdos-sdk}/$arch
+    local stamp=$cache/cxx-sources
+    if [ -f "$cache/libc++.a" ] && [ -f "$cache/libc++abi.a" ] && [ -f "$cache/libunwind.a" ] &&
+        [ "$(cat "$stamp" 2>/dev/null)" = "$SDK $zig_lib" ] &&
+        [ -z "$(find "$SDK/compat" "$self" -newer "$cache/libc++.a" -print -quit)" ]; then
+        return
+    fi
+    mkdir -p "$cache"
+    local tmp
+    tmp=$(mktemp -d "$cache/build.XXXXXX")
+    mkdir "$tmp/cxx" "$tmp/abi" "$tmp/unwind"
+    local lib=("${cxxbase[@]}" -Os -DNDEBUG -ffunction-sections -fdata-sections -fvisibility=hidden
+        -fvisibility-inlines-hidden -Wno-user-defined-literals -w)
+    # new / delete and the exception classes are libc++abi's; not support/,
+    # nor the tz database:
+    local cxx=("${lib[@]}" -std=c++23 -D_LIBCPP_BUILDING_LIBRARY -DLIBCXX_BUILDING_LIBCXXABI
+        -D_LIBCPP_DISABLE_NEW_DELETE_DEFINITIONS -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST
+        -D_LIBCPP_HAS_CLOCK_GETTIME -DREMOVE_ALL_USE_DIRECTORY_ITERATOR -faligned-allocation -I"$zig_lib/libcxx/src")
+    # The uncaught-exception message names the type mangled: no 100 KB
+    # demangler in every program:
+    local abi=("${lib[@]}" -std=c++23 -D_LIBCXXABI_BUILDING_LIBRARY -D_LIBCPP_BUILDING_LIBRARY
+        -DLIBCXXABI_NON_DEMANGLING_TERMINATE -DHAVE___CXA_THREAD_ATEXIT_IMPL -I"$zig_lib/libcxx/src")
+    # libunwind without dl_iterate_phdr: .eh_frame_hdr as the linker
+    # scripts mark it:
+    local unw=($target -fhosted -fPIE -fno-stack-protector -D__zdos__=1 -I"$zig_lib/libunwind/include" -I"$SDK/compat"
+        -I"$SDK/src" -Os -DNDEBUG -ffunction-sections -fdata-sections -fvisibility=hidden -funwind-tables -fno-exceptions
+        -fno-rtti -D_LIBUNWIND_IS_BAREMETAL -D_LIBUNWIND_IS_NATIVE_ONLY -w)
+    local src std jobs=0 max
+    max=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
+    job() { # a compiler command in the background, $max at a time
+        "$@" >/dev/null &
+        jobs=$((jobs + 1))
+        if [ $jobs -ge "$max" ]; then wait -n || exit 1; jobs=$((jobs - 1)); fi
+    }
+    for src in "$zig_lib"/libcxx/src/{,filesystem/,ryu/}*.cpp; do
+        job zig cc "${cxx[@]}" -c "$src" -o "$tmp/cxx/$(basename "$src" .cpp).o"
+    done
+    for src in "$zig_lib"/libcxxabi/src/*.cpp; do
+        [ "$(basename "$src")" = cxa_noexception.cpp ] && continue # for -fno-exceptions builds
+        job zig cc "${abi[@]}" -c "$src" -o "$tmp/abi/$(basename "$src" .cpp).o"
+    done
+    for src in libunwind.cpp UnwindLevel1.c UnwindLevel1-gcc-ext.c UnwindRegistersRestore.S UnwindRegistersSave.S \
+        gcc_personality_v0.c; do
+        case $src in *.cpp) std=-std=c++17 ;; *.c) std=-std=c99 ;; *) std= ;; esac
+        job zig cc "${unw[@]}" $std -c "$zig_lib/libunwind/src/$src" -o "$tmp/unwind/${src%.*}.o"
+    done
+    while [ $jobs -gt 0 ]; do wait -n || exit 1; jobs=$((jobs - 1)); done
+    zig ar rcs "$tmp/libc++.a" "$tmp"/cxx/*.o
+    zig ar rcs "$tmp/libc++abi.a" "$tmp"/abi/*.o
+    zig ar rcs "$tmp/libunwind.a" "$tmp"/unwind/*.o
+    mv -f "$tmp/libc++abi.a" "$tmp/libunwind.a" "$cache/"
+    mv -f "$tmp/libc++.a" "$cache/libc++.a"
+    echo "$SDK $zig_lib" > "$stamp"
+    rm -rf "$tmp"
+}
+
+if [ "${1:-}" = --build-cxx ]; then
+    library
+    cxx_libraries
+    exit 0
+fi
+
+# Compiling only, or linking too; -lm, -lpthread ... are in the C library.
+# C++ links libc++ unless -nostdlib++: then zdos_cxx.c's small runtime does.
+link=1
+out=
+args=()
+cxx=0
+libcxx=1
+xlang=0
+case $me in *++) cxx=1 ;; esac
+while [ $# -gt 0 ]; do
+    a=$1
+    shift
+    case $a in
+        -c | -S | -E | -M | -MM | -fsyntax-only) link=0; args+=("$a") ;;
+        -o) out=${1:-}; shift; args+=(-o "$out") ;;
+        -o?*) out=${a#-o}; args+=("$a") ;;
+        -lc | -lm | -lpthread | -ldl | -lrt | -lutil | -lcrypt | -lxnet | -lresolv) ;;
+        -pthread | -pthreads | -static | -static-libgcc | -rdynamic | -pie | -no-pie | -fno-pie | -fno-PIE) ;;
+        -Wl,-pie | -Wl,--export-dynamic | -Wl,-E | -Wl,--as-needed | -Wl,--no-as-needed) ;;
+        -shared | -dynamiclib)
+            echo "$me: a ZDOS library is linked with -o NAME.ZDL, not -shared" >&2
+            exit 1
+            ;;
+        -print-prog-name=* | -print-file-name=* | --print-file-name=*) echo "${a#*=}"; exit 0 ;;
+        -nostdlib++) libcxx=0 ;;
+        -x) [ "${1:-}" = c++ ] && cxx=1; xlang=1; args+=("$a") ;;
+        -x?*) [ "$a" = -xc++ ] && cxx=1; xlang=1; args+=("$a") ;;
+        *.cpp | *.cc | *.cxx | *.c++ | *.cp | *.CPP | *.C | *.ii) cxx=1; args+=("$a") ;;
+        *) args+=("$a") ;;
+    esac
+done
+
+[ $cxx = 1 ] && cflags=("${cxxflags[@]}")
+
+# The ports' libraries in build/sdk-ports, found as a system's
+# are (<SDL2/SDL.h>, -lSDL2). -isystem comes after a build's own
+# -I, so a port rebuilding itself takes its own headers:
+ports=${ZDOS_SDK_PORTS:-$SDK/../build/sdk-ports}
+[ -d "$ports/include" ] && cflags+=(-isystem "$ports/include")
+
+if [ $link = 0 ] || [ ${#args[@]} -eq 0 ] || [[ " ${args[*]} " == *" -v "* ]] ||
+    [[ " ${args[*]} " == *" --version "* ]] || [[ " ${args[*]} " == *" -dumpversion "* ]] ||
+    [[ " ${args[*]} " == *" -dumpmachine "* ]]; then
+    exec zig cc "${cflags[@]}" ${args[@]+"${args[@]}"}
+fi
+
+# Entry: the SDK's start code, the library last; NAME.APP gives the flat
+# file, NAME.elf beside it. NAME.ZDL: a library, with zdos_libinit.c
+# instead of crt0. C++: libc++ before the C library, so its new /
+# delete and __cxa_* are the ones linked.
+library
+cache=${ZDOS_SDK_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/zdos-sdk}/$arch
+ldflags=(-pie -nostdlib -Wl,-e,zdos_entry -Wl,-T,"$linker" "$cache/crt0.o")
+[ -d "$ports/lib/$arch" ] && ldflags+=(-L"$ports/lib/$arch")
+libs=("$cache/libzdos.a")
+[ $xlang = 1 ] && args+=(-x none) # the libraries are not sources
+if [ $cxx = 1 ] && [ $libcxx = 1 ]; then
+    cxx_libraries
+    ldflags+=(-Wl,--gc-sections)
+    libs=("$cache/libc++.a" "$cache/libc++abi.a" "$cache/libunwind.a" "$cache/libzdos.a")
+fi
+case ${out,,} in
+    *.zdl)
+        elf=${out%.*}.elf
+        for i in "${!args[@]}"; do
+            [ "${args[$i]}" = "$out" ] && args[$i]=$elf
+            [ "${args[$i]}" = "-o$out" ] && args[$i]=-o$elf
+        done
+        zig cc "${cflags[@]}" -pie -nostdlib -Wl,-e,zdos_library -Wl,-u,zdos_library_init \
+            -Wl,-T,"$SDK/linkers/lib-$arch.ld" "${args[@]}" "$cache/libzdos.a"
+        to_app "$elf" "$out"
+        ;;
+    *.app)
+        elf=${out%.*}.elf
+        for i in "${!args[@]}"; do
+            [ "${args[$i]}" = "$out" ] && args[$i]=$elf
+            [ "${args[$i]}" = "-o$out" ] && args[$i]=-o$elf
+        done
+        zig cc "${cflags[@]}" "${ldflags[@]}" "${args[@]}" "${libs[@]}"
+        to_app "$elf" "$out"
+        ;;
+    *)
+        exec zig cc "${cflags[@]}" "${ldflags[@]}" "${args[@]}" "${libs[@]}"
+        ;;
+esac

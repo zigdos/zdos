@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# zdos-ranlib: zig ranlib, for configure and make
+exec zig ranlib "$@"

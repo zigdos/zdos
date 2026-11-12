@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# zdos-stubs [--arch=CPU] NAME LIST libNAME.a: a library's import
+# stubs, for C programs that call its functions by name (-lNAME).
+# LIST: the export table's order, as exports.def X(function) lines or
+# one slot a line (# comments).
+set -euo pipefail
+self=$(readlink -f "$0")
+SDK=$(cd "$(dirname "$self")/.." && pwd)
+arch=${ZDOS_ARCH:-x86_64}
+case ${1:-} in --arch=*) arch=${1#--arch=}; shift ;; esac
+case $arch in
+    x86 | i386 | i686) arch=x86 ;;
+    x86_64 | amd64) arch=x86_64 ;;
+    arm64 | aarch64) arch=arm64 ;;
+    *) echo "zdos-stubs: unknown CPU $arch (x86, x86_64, arm64)" >&2; exit 1 ;;
+esac
+[ $# -eq 3 ] || { echo "usage: zdos-stubs [--arch=CPU] NAME LIST libNAME.a" >&2; exit 1; }
+name=$1 list=$2 out=$3
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+if grep -q '^X(' "$list"; then
+    sed -n 's/^X(\([^)]*\))[[:space:]]*$/\1/p' "$list" >"$tmp/funcs.txt"
+else
+    cp "$list" "$tmp/funcs.txt"
+fi
+[ -s "$tmp/funcs.txt" ] || { echo "zdos-stubs: $list names no functions" >&2; exit 1; }
+zig run "$SDK/tools/zdl-stubs.zig" -- "$arch" "$name" "$tmp/funcs.txt" "$tmp/stubs.s"
+"$SDK/bin/zdos-cc" --arch="$arch" -Wno-unused-command-line-argument -c "$tmp/stubs.s" -o "$tmp/stubs.o"
+rm -f "$out"
+zig ar rcs "$out" "$tmp/stubs.o"

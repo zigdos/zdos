@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# zdos-c++: zdos-cc for C++.
+# zdos-cc takes C++ and the CPU from its name.
+here=$(cd "$(dirname "$(readlink -f "$0")")" && pwd)
+ZDOS_CC_NAME=$(basename "$0") exec "$here/zdos-cc" "$@"

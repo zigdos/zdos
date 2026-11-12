@@ -1,0 +1,55 @@
+--- a/src/audio/SDL_audio.c
++++ b/src/audio/SDL_audio.c
+@@ -129,6 +129,9 @@
+ #ifdef SDL_AUDIO_DRIVER_OS2
+     &OS2AUDIO_bootstrap,
+ #endif
++#ifdef SDL_AUDIO_DRIVER_ZDOS
++    &ZDOSAUDIO_bootstrap,
++#endif
+ #ifdef SDL_AUDIO_DRIVER_DISK
+     &DISKAUDIO_bootstrap,
+ #endif
+--- a/src/audio/SDL_sysaudio.h
++++ b/src/audio/SDL_sysaudio.h
+@@ -197,6 +197,7 @@
+ extern AudioBootStrap PAUDIO_bootstrap;
+ extern AudioBootStrap HAIKUAUDIO_bootstrap;
+ extern AudioBootStrap COREAUDIO_bootstrap;
++extern AudioBootStrap ZDOSAUDIO_bootstrap;
+ extern AudioBootStrap DISKAUDIO_bootstrap;
+ extern AudioBootStrap DUMMYAUDIO_bootstrap;
+ extern AudioBootStrap FUSIONSOUND_bootstrap;
+--- a/src/video/SDL_sysvideo.h
++++ b/src/video/SDL_sysvideo.h
+@@ -474,6 +474,7 @@
+ extern VideoBootStrap RPI_bootstrap;
+ extern VideoBootStrap KMSDRM_bootstrap;
+ extern VideoBootStrap KMSDRM_LEGACY_bootstrap;
++extern VideoBootStrap ZDOS_bootstrap;
+ extern VideoBootStrap DUMMY_bootstrap;
+ extern VideoBootStrap DUMMY_evdev_bootstrap;
+ extern VideoBootStrap Wayland_bootstrap;
+--- a/src/video/SDL_video.c
++++ b/src/video/SDL_video.c
+@@ -139,6 +139,9 @@
+ #ifdef SDL_VIDEO_DRIVER_QNX
+     &QNX_bootstrap,
+ #endif
++#ifdef SDL_VIDEO_DRIVER_ZDOS
++    &ZDOS_bootstrap,
++#endif
+ #ifdef SDL_VIDEO_DRIVER_OS2
+     &OS2DIVE_bootstrap,
+     &OS2VMAN_bootstrap,
+--- a/src/dynapi/SDL_dynapi.h
++++ b/src/dynapi/SDL_dynapi.h
+@@ -67,6 +67,8 @@
+ #define SDL_DYNAMIC_API 0 /* devkitARM doesn't support dynamic linking */
+ #elif defined(DYNAPI_NEEDS_DLOPEN) && !defined(HAVE_DLOPEN)
+ #define SDL_DYNAMIC_API 0 /* we need dlopen(), but don't have it.... */
++#elif defined(__zdos__)
++#define SDL_DYNAMIC_API 0 /* linked into each program */
+ #endif
+ 
+ /* everyone else. This is where we turn on the API if nothing forced it off. */

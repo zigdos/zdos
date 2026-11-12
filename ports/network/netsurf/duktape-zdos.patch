@@ -1,0 +1,13 @@
+--- a/netsurf/content/handlers/javascript/duktape/duk_custom.h
++++ b/netsurf/content/handlers/javascript/duktape/duk_custom.h
+@@ -38,3 +38,10 @@
+ #define DUK_USE_EXEC_TIMEOUT_CHECK dukky_check_timeout
+ 
+ #include "netsurf/inttypes.h"
++
++/* ZDOS's x86 build (i686, x87 floating point) crashed in Duktape on
++ * large pages: the unpacked duk_tval, as on x64, instead of the
++ * packed (NaN-boxed) one */
++#if defined(__zdos__) && defined(__i386__)
++#undef DUK_USE_PACKED_TVAL
++#endif

@@ -1,0 +1,26 @@
+--- a/netsurf/content/fetchers/Makefile
++++ b/netsurf/content/fetchers/Makefile
+@@ -1,7 +1,9 @@
+ # Content fetchers sources
+ 
+ S_FETCHERS_YES := data.c resource.c
+ S_FETCHERS_NO :=
+-S_FETCHERS_$(NETSURF_USE_CURL) += curl.c
++ifeq ($(NETSURF_USE_CURL),YES)
++S_FETCHERS_YES += curl.c
++endif
+ 
+ S_FETCHERS := $(addprefix fetchers/,$(S_FETCHERS_YES))
+ 
+--- a/netsurf/content/fetch.c
++++ b/netsurf/content/fetch.c
+@@ -53,7 +53,9 @@
+ #include "content/fetchers.h"
+ #include "content/fetchers/resource.h"
+ #include "content/fetchers/about/about.h"
++#ifdef WITH_CURL
+ #include "content/fetchers/curl.h"
++#endif
+ #include "content/fetchers/data.h"
+ #include "content/fetchers/file/file.h"
+ #include "javascript/fetcher.h"

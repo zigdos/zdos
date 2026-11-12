@@ -1,0 +1,13 @@
+#!/bin/sh
+# sdl2-config for ZDOS (installed by ports/graphics/SDL/build.sh): the flags
+# for zdos-cc, which finds build/sdk-ports itself
+here=$(cd "$(dirname "$0")/.." && pwd)
+for a in "$@"; do
+    case $a in
+        --version) echo @VERSION@ ;;
+        --prefix | --exec-prefix) echo "$here" ;;
+        --cflags) echo "-I$here/include/SDL2 -D_REENTRANT" ;;
+        --libs | --static-libs) echo "-lSDL2" ;;
+        *) echo "usage: sdl2-config [--version] [--prefix] [--cflags] [--libs] [--static-libs]" >&2; exit 1 ;;
+    esac
+done

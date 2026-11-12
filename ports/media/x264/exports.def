@@ -1,0 +1,23 @@
+/* Candidate exports from x264.h; review before use.
+ * Keep this order stable once programs link against the library.
+ * x264_encoder_open is versioned by X264_BUILD. */
+X(x264_nal_encode)
+X(x264_param_default)
+X(x264_param_parse)
+X(x264_param_cleanup)
+X(x264_param_default_preset)
+X(x264_param_apply_fastfirstpass)
+X(x264_param_apply_profile)
+X(x264_picture_init)
+X(x264_picture_alloc)
+X(x264_picture_clean)
+X(x264_encoder_open_165)
+X(x264_encoder_reconfig)
+X(x264_encoder_parameters)
+X(x264_encoder_headers)
+X(x264_encoder_encode)
+X(x264_encoder_close)
+X(x264_encoder_delayed_frames)
+X(x264_encoder_maximum_delayed_frames)
+X(x264_encoder_intra_refresh)
+X(x264_encoder_invalidate_reference)

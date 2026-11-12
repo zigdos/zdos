@@ -1,0 +1,182 @@
+--- a/include/cross.h
++++ b/include/cross.h
+@@ -49,6 +49,9 @@
+ #define CROSS_FILENAME(blah) 
+ #define CROSS_FILESPLIT '\\'
+ #define F_OK 0
++#elif defined (__zdos__)					/* ZDOS: DOS paths (D:\GAMES\...) */
++#define CROSS_FILENAME(blah) 
++#define CROSS_FILESPLIT '\\'
+ #else
+ #define	CROSS_FILENAME(blah) strreplace(blah,'\\','/')
+ #define CROSS_FILESPLIT '/'
+--- a/src/cpu/core_dyn_x86/risc_x86.h
++++ b/src/cpu/core_dyn_x86/risc_x86.h
+@@ -128,6 +128,24 @@
+ 		:"%edx","%edi","%esi","cc","memory"
+ 	);
+ 	reg_flags=(reg_flags & ~FMASK_TEST) | (tempflags & FMASK_TEST);
++#elif defined(__zdos__)
++	// ZDOS programs are position independent: the return address from
++	// call/pop instead of an absolute one
++	register Bit32u tempflags=reg_flags & FMASK_TEST;
++	__asm__ volatile (
++		"pushl %%ebp						\n"
++		"call 1f							\n"
++		"1:									\n"
++		"addl $(2f-1b),(%%esp)				\n"
++		"pushl  %2							\n"
++		"jmp  *%3							\n"
++		"2:									\n"
++		"popl %%ebp							\n"
++		:"=a" (retval), "=c" (tempflags)
++		:"r" (tempflags),"r" (code)
++		:"%edx","%ebx","%edi","%esi","cc","memory"
++	);
++	reg_flags=(reg_flags & ~FMASK_TEST) | (tempflags & FMASK_TEST);
+ #else
+ 	register Bit32u tempflags=reg_flags & FMASK_TEST;
+ 	__asm__ volatile (
+--- a/src/dos/dos_programs.cpp
++++ b/src/dos/dos_programs.cpp
+@@ -266,6 +266,10 @@
+ 			//os2: some special drive check
+ 			//rest: substiture ~ for home
+ 			bool failed = false;
++#ifdef __zdos__
++			/* D:\GAMES\ as D:\GAMES for stat, D:\ kept */
++			if(temp_line.size() > 3 && (temp_line[temp_line.size()-1]=='\\' || temp_line[temp_line.size()-1]=='/')) temp_line.erase(temp_line.size()-1,1);
++#endif
+ #if defined (WIN32) || defined(OS2)
+ 			/* Removing trailing backslash if not root dir so stat will succeed */
+ 			if(temp_line.size() > 3 && temp_line[temp_line.size()-1]=='\\') temp_line.erase(temp_line.size()-1,1);
+--- a/src/dos/drive_cache.cpp
++++ b/src/dos/drive_cache.cpp
+@@ -180,7 +180,7 @@
+ 
+ 	if (*work) {
+ 		size_t len = strlen(work);
+-#if defined (WIN32) 
++#if defined (WIN32) || defined(__zdos__)
+ 		if((work[len-1] == CROSS_FILESPLIT ) && (len >= 2) && (work[len-2] != ':')) {
+ #else
+ 		if((len > 1) && (work[len-1] == CROSS_FILESPLIT )) {
+--- a/src/gui/sdlmain.cpp
++++ b/src/gui/sdlmain.cpp
+@@ -1634,7 +1634,12 @@
+ 	Prop_int* Pint;
+ 	Prop_multival* Pmulti;
+ 
++#ifdef __zdos__
++	/* ZDOS: the program's tab is the screen; fullscreen also locks the mouse */
++	Pbool = sdl_sec->Add_bool("fullscreen",Property::Changeable::Always,true);
++#else
+ 	Pbool = sdl_sec->Add_bool("fullscreen",Property::Changeable::Always,false);
++#endif
+ 	Pbool->Set_help("Start dosbox directly in fullscreen. (Press ALT-Enter to go back)");
+      
+ 	Pbool = sdl_sec->Add_bool("fulldouble",Property::Changeable::Always,false);
+@@ -1693,7 +1698,12 @@
+ 	Pstring = sdl_sec->Add_path("mapperfile",Property::Changeable::Always,MAPPERFILE);
+ 	Pstring->Set_help("File used to load/save the key/event mappings from. Resetmapper only works with the defaul value.");
+ 
++#ifdef __zdos__
++	/* The SDL scancodes are USB HID usages there, not the X11 ones the mapper's table knows */
++	Pbool = sdl_sec->Add_bool("usescancodes",Property::Changeable::Always,false);
++#else
+ 	Pbool = sdl_sec->Add_bool("usescancodes",Property::Changeable::Always,true);
++#endif
+ 	Pbool->Set_help("Avoid usage of symkeys, might not work on all operating systems.");
+ }
+ 
+--- a/src/gui/sdl_mapper.cpp
++++ b/src/gui/sdl_mapper.cpp
+@@ -2394,7 +2394,11 @@
+ 
+ 	usescancodes = false;
+ 
++#ifdef __zdos__
++	if (false) { /* HID usages as scancodes (sdlmain.cpp): the symbols only */
++#else
+ 	if (section->Get_bool("usescancodes")) {
++#endif
+ 		usescancodes=true;
+ 
+ 		/* Note: table has to be tested/updated for various OSs */
+--- a/src/misc/cross.cpp
++++ b/src/misc/cross.cpp
+@@ -63,6 +63,9 @@
+ #elif defined(MACOSX)
+ 	in = "~/Library/Preferences";
+ 	ResolveHomedir(in);
++#elif defined(__zdos__)
++	in = "~\\.dosbox";
++	ResolveHomedir(in);
+ #else
+ 	in = "~/.dosbox";
+ 	ResolveHomedir(in);
+@@ -91,7 +94,11 @@
+ 	ResolveHomedir(in);
+ 	//Don't create it. Assume it exists
+ #else
++#ifdef __zdos__
++	in = "~\\.dosbox";	/* %HOME%\.dosbox */
++#else
+ 	in = "~/.dosbox";
++#endif
+ 	ResolveHomedir(in);
+ 	mkdir(in.c_str(),0700);
+ #endif
+@@ -101,7 +108,11 @@
+ void Cross::ResolveHomedir(std::string & temp_line) {
+ 	if(!temp_line.size() || temp_line[0] != '~') return; //No ~
+ 
+-	if(temp_line.size() == 1 || temp_line[1] == CROSS_FILESPLIT) { //The ~ and ~/ variant
++	if(temp_line.size() == 1 || temp_line[1] == CROSS_FILESPLIT
++#ifdef __zdos__
++	   || temp_line[1] == '/'
++#endif
++	   ) { //The ~ and ~/ variant
+ 		char * home = getenv("HOME");
+ 		if(home) temp_line.replace(0,1,std::string(home));
+ #if defined HAVE_SYS_TYPES_H && defined HAVE_PWD_H
+--- a/src/misc/setup.cpp
++++ b/src/misc/setup.cpp
+@@ -297,7 +297,7 @@
+ 	if( current_config_dir.empty()) realpath = workcopy;
+ 	else realpath = current_config_dir + CROSS_FILESPLIT + workcopy;
+ 	//Absolute paths
+-#if defined (WIN32) || defined(OS2)
++#if defined (WIN32) || defined(OS2) || defined(__zdos__)
+ 	if( workcopy.size() > 2 && workcopy[1] == ':' ) realpath = workcopy;
+ #else
+ 	if( workcopy.size() > 1 && workcopy[0] == '/' ) realpath = workcopy;
+--- a/src/cpu/cpu.cpp
++++ b/src/cpu/cpu.cpp
+@@ -19,6 +19,10 @@
+ /* $Id: cpu.cpp,v 1.116 2009-03-16 18:10:08 c2woody Exp $ */
+ 
+ #include <assert.h>
++#ifdef __zdos__
++#include <stdlib.h>
++#include <strings.h>
++#endif
+ #include <sstream>
+ #include "dosbox.h"
+ #include "cpu.h"
+@@ -2342,6 +2346,15 @@
+ 
+ #endif
+ 		}
++#ifdef __zdos__
++		// RW_NX=true (ZDOS's SYSTEM.CFG, a global variable): heap memory can't
++		// run code, so core=auto keeps to the normal core; any other core is as set
++		const char *rw_nx = getenv("RW_NX");
++		if (core == "auto" && rw_nx != NULL && strcasecmp(rw_nx, "true") == 0) {
++			CPU_AutoDetermineMode&=(~CPU_AUTODETERMINE_CORE);
++			LOG_MSG("CPU: RW_NX=true, so core=auto uses the normal core only");
++		}
++#endif
+ 
+ #if (C_DYNAMIC_X86)
+ 		CPU_Core_Dyn_X86_Cache_Init((core == "dynamic") || (core == "dynamic_nodhfpu"));

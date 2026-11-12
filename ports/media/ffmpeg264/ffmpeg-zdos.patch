@@ -1,0 +1,102 @@
+--- a/libavcodec/x86/h264_deblock.asm
++++ b/libavcodec/x86/h264_deblock.asm
+@@ -665,11 +665,7 @@
+     %define t5 m11
+     %define mask0 m12
+     %define mask1p m13
+-%if WIN64
+     %define mask1q [rsp]
+-%else
+-    %define mask1q [rsp-24]
+-%endif
+     %define mpb_0 m14
+     %define mpb_1 m15
+ %else
+@@ -688,7 +684,7 @@
+ ;-----------------------------------------------------------------------------
+ ; void ff_deblock_v_luma_intra(uint8_t *pix, ptrdiff_t stride, int alpha, int beta)
+ ;-----------------------------------------------------------------------------
+-%if WIN64
++%if ARCH_X86_64
+ cglobal deblock_v_luma_intra_8, 4,6,16,0x10
+ %else
+ cglobal deblock_v_luma_intra_8, 4,6,16,ARCH_X86_64*0x50-0x50
+--- a/libswresample/x86/resample.asm
++++ b/libswresample/x86/resample.asm
+@@ -59,18 +59,18 @@
+ ; int resample_common_$format(ResampleContext *ctx, $format *dst,
+ ;                             const $format *src, int size, int update_ctx)
+ %if ARCH_X86_64 ; unix64 and win64
+-cglobal resample_common_%1, 0, 15, 2, ctx, dst, src, phase_count, index, frac, \
++cglobal resample_common_%1, 0, 15, 2, -0x20, ctx, dst, src, phase_count, index, frac, \
+                                       dst_incr_mod, size, min_filter_count_x4, \
+                                       min_filter_len_x4, dst_incr_div, src_incr, \
+                                       phase_mask, dst_end, filter_bank
+ 
+-    ; use red-zone for variable storage
+-%define ctx_stackq            [rsp-0x8]
+-%define src_stackq            [rsp-0x10]
++    ; variables on the stack (ZDOS: interrupts use the red zone)
++%define ctx_stackq            [rsp+0x00]
++%define src_stackq            [rsp+0x08]
+ %if WIN64
+ %define update_context_stackd r4m
+ %else ; unix64
+-%define update_context_stackd [rsp-0x14]
++%define update_context_stackd [rsp+0x10]
+ %endif
+ 
+     ; load as many variables in registers as possible; for the rest, store
+@@ -274,14 +274,14 @@
+ ;                             const float *src, int size, int update_ctx)
+ %if ARCH_X86_64 ; unix64 and win64
+ %if UNIX64
+-cglobal resample_linear_%1, 0, 15, 5, ctx, dst, phase_mask, phase_count, index, frac, \
++cglobal resample_linear_%1, 0, 15, 5, -0x20, ctx, dst, phase_mask, phase_count, index, frac, \
+                                       size, dst_incr_mod, min_filter_count_x4, \
+                                       min_filter_len_x4, dst_incr_div, src_incr, \
+                                       src, dst_end, filter_bank
+ 
+     mov                         srcq, r2mp
+ %else ; win64
+-cglobal resample_linear_%1, 0, 15, 5, ctx, phase_mask, src, phase_count, index, frac, \
++cglobal resample_linear_%1, 0, 15, 5, -0x20, ctx, phase_mask, src, phase_count, index, frac, \
+                                       size, dst_incr_mod, min_filter_count_x4, \
+                                       min_filter_len_x4, dst_incr_div, src_incr, \
+                                       dst, dst_end, filter_bank
+@@ -289,14 +289,14 @@
+     mov                         dstq, r1mp
+ %endif
+ 
+-    ; use red-zone for variable storage
+-%define ctx_stackq            [rsp-0x8]
+-%define src_stackq            [rsp-0x10]
+-%define phase_mask_stackd     [rsp-0x14]
++    ; variables on the stack (ZDOS: interrupts use the red zone)
++%define ctx_stackq            [rsp+0x00]
++%define src_stackq            [rsp+0x08]
++%define phase_mask_stackd     [rsp+0x10]
+ %if WIN64
+ %define update_context_stackd r4m
+ %else ; unix64
+-%define update_context_stackd [rsp-0x18]
++%define update_context_stackd [rsp+0x14]
+ %endif
+ 
+     ; load as many variables in registers as possible; for the rest, store
+--- a/fftools/ffplay.c
++++ b/fftools/ffplay.c
+@@ -1924,6 +1924,13 @@
+             }
+         }
+     }
++#ifdef __zdos__
++    /* SDL's software renderer lists only RGB, but takes YUV textures too and
++       converts them itself (SSE2 on x86-64): offered first, no swscale step */
++    memmove(pix_fmts + 1, pix_fmts, nb_pix_fmts * sizeof(*pix_fmts));
++    pix_fmts[0] = AV_PIX_FMT_YUV420P;
++    nb_pix_fmts++;
++#endif
+ 
+     while ((e = av_dict_iterate(sws_dict, e))) {
+         if (!strcmp(e->key, "sws_flags")) {

@@ -1,0 +1,8 @@
+[package]
+name = "zdos"
+version = "0.1.0"
+edition = "2024"
+description = "ZDOS's own functions for Rust programs with std: console, keys, graphics, mouse, sound, system information"
+publish = false
+
+[dependencies]

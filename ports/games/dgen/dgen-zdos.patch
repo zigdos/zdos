@@ -1,0 +1,364 @@
+--- a/main.cpp
++++ b/main.cpp
+@@ -242,6 +242,23 @@
+ 	}
+ 	else
+ 		fprintf(stderr, "rc: %s: %s\n", DGEN_RC, strerror(errno));
++#ifdef __zdos__
++	// An earlier ZDOS build made W A S D and the keypad bind_* entries
++	// (now key2_pad1_*); dgenrc.auto kept them: drop them
++	for (struct rc_field *rcf = rc_fields; (rcf->fieldname != NULL);) {
++		const char *to = *(const char **)rcf->variable;
++
++		if ((rcf->parser == rc_bind) &&
++		    (!strncmp(rcf->fieldname, "bind_", 5)) &&
++		    (strchr("wasd", rcf->fieldname[5]) ?
++		     (rcf->fieldname[6] == '\0') :
++		     (!strncmp(&rcf->fieldname[5], "kp_", 3))) &&
++		    (to != NULL) && (!strncmp(to, "key_pad1_", 9)))
++			rc_binding_del(rcf); // shifts the next ones here
++		else
++			++rcf;
++	}
++#endif
+ 
+   // Check all our options
+   snprintf(temp, sizeof(temp), "%s%s",
+--- a/md.cpp
++++ b/md.cpp
+@@ -908,10 +908,25 @@
+ 	assert(order != NULL);
+ 	assert(avail != NULL);
+ 	for (r = 0; (order[r] != '\0'); ++r)
+-		for (i = 0; (i != sizeof(this->cart_head.countries)); ++i)
++		for (i = 0; (i != sizeof(this->cart_head.countries)); ++i) {
+ 			if ((isprint(order[r])) &&
+ 			    (toupper(order[r]) == toupper(avail[i])))
+ 				return toupper(order[r]);
++#ifdef __zdos__
++			// Later carts' hex digit: 1 Japan, 4 Americas, 8 Europe
++			if ((i == 0) && (isxdigit(avail[0])) &&
++			    (!isalpha(avail[1])) && (avail[0] != 'E')) {
++				unsigned int m = (isdigit(avail[0]) ?
++						  (avail[0] - '0') :
++						  (toupper(avail[0]) - 'A' + 10));
++
++				if (((toupper(order[r]) == 'J') && (m & 1)) ||
++				    ((toupper(order[r]) == 'U') && (m & 4)) ||
++				    ((toupper(order[r]) == 'E') && (m & 8)))
++					return toupper(order[r]);
++			}
++#endif
++		}
+ 	// Use default region.
+ 	return dgen_region;
+ }
+--- a/rc.cpp
++++ b/rc.cpp
+@@ -648,6 +648,20 @@
+ 	{ "joy_pad2_mode", rc_joypad, &pad2_mode[RCBJ] },
+ 	{ "mou_pad2_mode", rc_mouse, &pad2_mode[RCBM] },
+ 	{ "key_pad2_start", rc_keysym, &pad2_start[RCBK] },
++#ifdef __zdos__
++	{ "key2_pad1_up", rc_keysym, &pad1_up2 },
++	{ "key2_pad1_down", rc_keysym, &pad1_down2 },
++	{ "key2_pad1_left", rc_keysym, &pad1_left2 },
++	{ "key2_pad1_right", rc_keysym, &pad1_right2 },
++	{ "key2_pad1_a", rc_keysym, &pad1_a2 },
++	{ "key2_pad1_b", rc_keysym, &pad1_b2 },
++	{ "key2_pad1_c", rc_keysym, &pad1_c2 },
++	{ "key2_pad1_x", rc_keysym, &pad1_x2 },
++	{ "key2_pad1_y", rc_keysym, &pad1_y2 },
++	{ "key2_pad1_z", rc_keysym, &pad1_z2 },
++	{ "key2_pad1_mode", rc_keysym, &pad1_mode2 },
++	{ "key2_pad1_start", rc_keysym, &pad1_start2 },
++#endif
+ 	{ "joy_pad2_start", rc_joypad, &pad2_start[RCBJ] },
+ 	{ "mou_pad2_start", rc_mouse, &pad2_start[RCBM] },
+ 	{ "key_pico_pen_up", rc_keysym, &pico_pen_up[RCBK] },
+--- a/rc-vars.h
++++ b/rc-vars.h
+@@ -29,6 +29,49 @@
+ 	extern intptr_t name[RCB_NUM]
+ #endif
+ 
++#ifdef __zdos__
++// ZDOS: A B C on J K L, X Y Z on U I O; second keys (key2_pad1_*, used
++// as the first ones are, sdl.cpp): W A S D, the keypad's 4-9 and Enter;
++// pad 2 has no keys by default, the keypad being pad 1's
++RCCTL(pad1_up, PDK_UP, JS_AXIS(0, 1, JS_AXIS_NEGATIVE), 0);
++RCCTL(pad1_down, PDK_DOWN, JS_AXIS(0, 1, JS_AXIS_POSITIVE), 0);
++RCCTL(pad1_left, PDK_LEFT, JS_AXIS(0, 0, JS_AXIS_NEGATIVE), 0);
++RCCTL(pad1_right, PDK_RIGHT, JS_AXIS(0, 0, JS_AXIS_POSITIVE), 0);
++RCCTL(pad1_a, 'j', JS_BUTTON(0, 0), 0);
++RCCTL(pad1_b, 'k', JS_BUTTON(0, 3), 0);
++RCCTL(pad1_c, 'l', JS_BUTTON(0, 1), 0);
++RCCTL(pad1_x, 'u', JS_BUTTON(0, 6), 0);
++RCCTL(pad1_y, 'i', JS_BUTTON(0, 4), 0);
++RCCTL(pad1_z, 'o', JS_BUTTON(0, 5), 0);
++RCCTL(pad1_mode, PDK_BACKSPACE, JS_BUTTON(0, 9), 0);
++RCCTL(pad1_start, PDK_RETURN, JS_BUTTON(0, 8), 0);
++
++RCCTL(pad2_up, 0, JS_AXIS(1, 1, JS_AXIS_NEGATIVE), 0);
++RCCTL(pad2_down, 0, JS_AXIS(1, 1, JS_AXIS_POSITIVE), 0);
++RCCTL(pad2_left, 0, JS_AXIS(1, 0, JS_AXIS_NEGATIVE), 0);
++RCCTL(pad2_right, 0, JS_AXIS(1, 0, JS_AXIS_POSITIVE), 0);
++RCCTL(pad2_a, 0, JS_BUTTON(1, 0), 0);
++RCCTL(pad2_b, 0, JS_BUTTON(1, 3), 0);
++RCCTL(pad2_c, 0, JS_BUTTON(1, 1), 0);
++RCCTL(pad2_x, 0, JS_BUTTON(1, 6), 0);
++RCCTL(pad2_y, 0, JS_BUTTON(1, 4), 0);
++RCCTL(pad2_z, 0, JS_BUTTON(1, 5), 0);
++RCCTL(pad2_mode, 0, JS_BUTTON(1, 9), 0);
++RCCTL(pad2_start, 0, JS_BUTTON(1, 8), 0);
++
++RCVAR(pad1_up2, 'w');
++RCVAR(pad1_down2, 's');
++RCVAR(pad1_left2, 'a');
++RCVAR(pad1_right2, 'd');
++RCVAR(pad1_a2, PDK_KP4);
++RCVAR(pad1_b2, PDK_KP5);
++RCVAR(pad1_c2, PDK_KP6);
++RCVAR(pad1_x2, PDK_KP7);
++RCVAR(pad1_y2, PDK_KP8);
++RCVAR(pad1_z2, PDK_KP9);
++RCVAR(pad1_mode2, 0);
++RCVAR(pad1_start2, PDK_KP_ENTER);
++#else
+ RCCTL(pad1_up, PDK_UP, JS_AXIS(0, 1, JS_AXIS_NEGATIVE), 0);
+ RCCTL(pad1_down, PDK_DOWN, JS_AXIS(0, 1, JS_AXIS_POSITIVE), 0);
+ RCCTL(pad1_left, PDK_LEFT, JS_AXIS(0, 0, JS_AXIS_NEGATIVE), 0);
+@@ -54,6 +97,7 @@
+ RCCTL(pad2_z, PDK_PAGEUP, JS_BUTTON(1, 5), 0);
+ RCCTL(pad2_mode, PDK_KP_PLUS, JS_BUTTON(1, 9), 0);
+ RCCTL(pad2_start, PDK_KP_ENTER, JS_BUTTON(1, 8), 0);
++#endif
+ 
+ RCCTL(pico_pen_up,
+       PDK_UP,
+@@ -142,7 +186,15 @@
+ RCVAR(dgen_fps, 0);
+ RCVAR(dgen_buttons, 0);
+ RCVAR(dgen_fullscreen, 0);
++#if defined(__zdos__) && defined(__i386__)
++// BIOS: no message bar, the 224 lines cropped to VGA's 200 (mini SDL)
++RCVAR(dgen_info_height, 0);
++#elif defined(__zdos__)
++// The 8x13 font's bar under the 320 x 224 picture
++RCVAR(dgen_info_height, 13);
++#else
+ RCVAR(dgen_info_height, -1);
++#endif
+ RCVAR(dgen_width, -1);
+ RCVAR(dgen_height, -1);
+ RCVAR(dgen_scale, -1);
+--- a/sdl/sdl.cpp
++++ b/sdl/sdl.cpp
+@@ -3458,8 +3458,16 @@
+ 		// Force defaults once.
+ 		scrtmp.window_width = 0;
+ 		scrtmp.window_height = 0;
++#ifdef __zdos__
++		// ZDOS scales the picture to the screen itself
++		if (dgen_info_height >= 0)
++			info_height = dgen_info_height;
++		scrtmp.width = video.width;
++		scrtmp.height = (video.height + info_height);
++#else
+ 		scrtmp.width = (video.width * 2);
+ 		scrtmp.height = ((video.height * 2) + info_height);
++#endif
+ 		scrtmp.x_scale = (scrtmp.width / video.width);
+ 		scrtmp.y_scale = (scrtmp.height / video.height);
+ 		scrtmp.bpp = 0;
+@@ -3903,7 +3911,14 @@
+ 		video.height = 224;
+ 	}
+ 	// Reinitialize screen.
++#ifdef __zdos__
++	// NTSC <-> PAL: 224 or 240 lines at the same scale
++	if (screen_init(screen.window_width,
++			((video.height * (screen.y_scale ? screen.y_scale : 1)) +
++			 screen.info_height)))
++#else
+ 	if (screen_init(screen.window_width, screen.window_height))
++#endif
+ 		goto fail;
+ 	DEBUG(("screen reinitialized"));
+ 	return 1;
+@@ -5229,6 +5244,28 @@
+ 	unsigned int y:10;
+ };
+ 
++#ifdef __zdos__
++// A control's second key (rc-vars.h), 0 if none
++static intptr_t ctl_key2(const struct ctl& ctl)
++{
++	static const struct {
++		intptr_t (*rc)[RCB_NUM];
++		intptr_t *key2;
++	} keys2[] = {
++		{ &pad1_up, &pad1_up2 }, { &pad1_down, &pad1_down2 },
++		{ &pad1_left, &pad1_left2 }, { &pad1_right, &pad1_right2 },
++		{ &pad1_a, &pad1_a2 }, { &pad1_b, &pad1_b2 }, { &pad1_c, &pad1_c2 },
++		{ &pad1_x, &pad1_x2 }, { &pad1_y, &pad1_y2 }, { &pad1_z, &pad1_z2 },
++		{ &pad1_mode, &pad1_mode2 }, { &pad1_start, &pad1_start2 }
++	};
++
++	for (size_t i = 0; (i != elemof(keys2)); ++i)
++		if (keys2[i].rc == ctl.rc)
++			return *keys2[i].key2;
++	return 0;
++}
++#endif
++
+ static int ctl_pad1(struct ctl& ctl, md& megad)
+ {
+ 	switch (ctl.type) {
+@@ -5983,6 +6020,9 @@
+ 	return (found == num);
+ }
+ 
++#ifdef __zdos__
++#define manage_bindings manage_bindings_
++#endif
+ static int manage_bindings(md& md, bool pressed, enum rc_binding_type type,
+ 			   intptr_t code)
+ {
+@@ -6066,6 +6106,25 @@
+ 	return 1;
+ }
+ 
++#ifdef __zdos__
++#undef manage_bindings
++// A release's own key has already left combos[] when the bindings are
++// looked at, so check_combos() never matched it and a bound control (a
++// key_* alias such as W for key_pad1_up) stayed pressed: count it in
++static int manage_bindings(md& md, bool pressed, enum rc_binding_type type,
++			   intptr_t code)
++{
++	int ret;
++
++	if (pressed)
++		return manage_bindings_(md, pressed, type, code);
++	manage_combos(md, true, type, code);
++	ret = manage_bindings_(md, pressed, type, code);
++	manage_combos(md, false, type, code);
++	return ret;
++}
++#endif
++
+ static int manage_game_genie(md& megad, intptr_t ksym, intptr_t ksym_uni)
+ {
+ 	static char buf[12];
+@@ -6295,8 +6354,8 @@
+ 	};
+ 	unsigned int hat_value_map;
+ 	intptr_t joypad;
+-	bool pressed;
+ #endif
++	bool pressed;
+ 	uint32_t plist[8];
+ 	uint32_t rlist[8];
+ 	unsigned int i, pi, ri;
+@@ -6330,6 +6389,16 @@
+ #ifdef WITH_PICO
+ 		manage_pico_pen(megad);
+ #endif
++#ifdef ZDOS_PAD_LOG
++		// For the stuck-key test (scratchpad): pad 1's changes
++		{
++			static uint32_t was = MD_PAD_UNTOUCHED;
++
++			if (megad.pad[0] != was)
++				fprintf(stderr, "pad %05x\n",
++					(unsigned int)(was = megad.pad[0]));
++		}
++#endif
+ 		return 1;
+ 	}
+ 	switch (event.type) {
+@@ -6554,7 +6623,11 @@
+ 		}
+ 
+ 		for (struct ctl* ctl = control; (ctl->rc != NULL); ++ctl) {
+-			if (ksym != (*ctl->rc)[RCBK])
++			if ((ksym != (*ctl->rc)[RCBK])
++#ifdef __zdos__
++			    && ((ksym == 0) || (ksym != ctl_key2(*ctl)))
++#endif
++			    )
+ 				continue;
+ 			assert(ctl->press != NULL);
+ 			ctl->pressed = true;
+@@ -6589,7 +6662,12 @@
+ 		// The only time we care about key releases is for the
+ 		// controls, but ignore key modifiers so they never get stuck.
+ 		for (struct ctl* ctl = control; (ctl->rc != NULL); ++ctl) {
+-			if (ksym != ((*ctl->rc)[RCBK] & ~KEYSYM_MOD_MASK))
++			if ((ksym != ((*ctl->rc)[RCBK] & ~KEYSYM_MOD_MASK))
++#ifdef __zdos__
++			    && ((ksym == 0) || (ksym != (ctl_key2(*ctl) &
++							 ~KEYSYM_MOD_MASK)))
++#endif
++			    )
+ 				continue;
+ 			ctl->pressed = false;
+ 			ctl->coord = false;
+--- a/system.c
++++ b/system.c
+@@ -66,7 +66,7 @@
+ 	PATH_TYPE_ABSOLUTE
+ };
+ 
+-#ifdef __MINGW32__
++#if defined(__MINGW32__) || defined(__zdos__)
+ 
+ /**
+  * Check whether a path is absolute or relative.
+--- a/system.h
++++ b/system.h
+@@ -19,7 +19,13 @@
+ 
+ SYSTEM_H_BEGIN_
+ 
+-#ifndef __MINGW32__
++#if defined(__zdos__)
++/* ZDOS: Unix names, DOS paths (\ or /, drive letters) */
++#define DGEN_BASEDIR ".dgen"
++#define DGEN_RC "dgenrc"
++#define DGEN_AUTORC "dgenrc.auto"
++#define DGEN_DIRSEP "\\/"
++#elif !defined(__MINGW32__)
+ #define DGEN_BASEDIR ".dgen"
+ #define DGEN_RC "dgenrc"
+ #define DGEN_AUTORC "dgenrc.auto"
+--- a/vdp.cpp
++++ b/vdp.cpp
+@@ -360,10 +360,25 @@
+     // Do a dma fill if it's set up:
+     if (((reg[0x17]>>6)&3)==2)
+     {
++      // As the VDP does it: the word is written normally, then the fill
++      // puts its high byte at each next address ^ 1 (VRAM; CRAM and VSRAM
++      // get the word). Games fill single bytes of the H scroll table so.
+       int i,len;
+       len=dma_len();
++      if (len==0)
++        len=0x10000;
++      putword(d);
+       for (i=0;i<len;i++)
+-        putword(d);
++      {
++        if (rw_mode==0x04)
++        {
++          poke_vram((rw_addr ^ 1), (d >> 8));
++          rw_addr+=reg[15];
++        }
++        else
++          putword(d);
++      }
++      rw_dma=0;
+       return 0;
+     }
+   }

@@ -1,0 +1,9 @@
+ZSNES SNES emulator (ZSNES by the ZSNES Team,
+ported to C by Alexander F. Roedseth and others).
+
+ZSNES is under the GNU General Public License, version 2 (in separate file).
+It contains snes_ntsc 0.2.2 (Copyright (C) 2006 Shay Green;
+GNU Lesser General Public License 2.1 or later),
+miniz 3.0.0 (public domain, "unlicense"),
+ManyMouse (Copyright (c) 2003-2007 Ryan C. Gordon and
+others; zlib license), whose notices are in their source files.

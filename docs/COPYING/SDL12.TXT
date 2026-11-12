@@ -1,0 +1,5 @@
+ZDOS's partial SDL 1.2 (libSDL.a, linked into programs built with -lSDL).
+ZDOS's own code in ports/graphics/sdl12, written to
+SDL 1.2's documented API on ZDOS's display, input and sound glue.
+It is not SDL and contains none of SDL's code;
+it is under ZDOS's license (ZDOS.TXT).

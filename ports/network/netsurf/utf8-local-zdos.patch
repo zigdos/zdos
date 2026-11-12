@@ -1,0 +1,24 @@
+--- a/netsurf/frontends/framebuffer/font_internal.c
++++ b/netsurf/frontends/framebuffer/font_internal.c
+@@ -327,7 +327,20 @@
+ 				       size_t len,
+ 				       char **result)
+ {
+-	return utf8_to_enc(string, "CP1252", len, result);
++	/* UTF-8 as is: the SDK's iconv has no CP1252, and ZDOS's
++	 * text is UTF-8 (len 0: all of it, as utf8_to_enc) */
++	if (len == 0)
++		len = strlen(string);
++	*result = malloc(len + 1);
++	if (*result == NULL) {
++		return NSERROR_NOMEM;
++	}
++
++	memcpy(*result, string, len);
++
++	(*result)[len] = '\0';
++
++	return NSERROR_OK;
+ 
+ }
+ 

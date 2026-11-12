@@ -1,0 +1,11 @@
+--- a/netsurf/Makefile
++++ b/netsurf/Makefile
+@@ -231,7 +231,9 @@
+ # We trace during link so that we can determine if a libary changes under us in
+ # order to re-link.  This *may* be gcc specific, so may need tweaks in future.
++ifeq ($(ZDOS_ARCH),)
+ LDFLAGS += -Wl,--trace
++endif
+ 
+ # ----------------------------------------------------------------------------
+ # General make rules

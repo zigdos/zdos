@@ -1,0 +1,11 @@
+/* Functions after SQLite's own table (sqlite3_api_routines lacks them: an
+ * extension never calls them), in their slots' order; only ever added at
+ * the end. sqlite_zdl.c fills them in, build.sh makes their stubs. */
+X(sqlite3_initialize)
+X(sqlite3_shutdown)
+X(sqlite3_config)
+X(sqlite3_os_init)
+X(sqlite3_os_end)
+X(sqlite3_enable_load_extension)
+X(sqlite3_rtree_geometry_callback)
+X(sqlite3_rtree_query_callback)

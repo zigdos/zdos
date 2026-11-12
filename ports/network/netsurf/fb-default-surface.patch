@@ -1,0 +1,10 @@
+--- a/netsurf/frontends/framebuffer/gui.c	2026-11-03 23:18:48.206440422 -0300
++++ b/netsurf/frontends/framebuffer/gui.c	2026-11-03 23:18:48.216216548 -0300
+@@ -470,6 +470,7 @@
+ {
+ 	if (type < fetype) {
+ 		fename = name;
++		fetype = type;
+ 	}
+ }
+ 

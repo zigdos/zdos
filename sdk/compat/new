@@ -1,0 +1,42 @@
+// <new> for C++ without the standard library (-fno-exceptions -fno-rtti):
+// placement new, std::nothrow, std::align_val_t. The operators are in
+// zdos_cxx.c; a failed plain new ends the program (no std::bad_alloc).
+#pragma once
+#ifndef _ZDOS_NEW_
+#define _ZDOS_NEW_
+
+#include <stddef.h>
+
+namespace std {
+struct nothrow_t {
+    explicit nothrow_t() = default;
+};
+extern const nothrow_t nothrow;
+enum class align_val_t : size_t {};
+} // namespace std
+
+void *operator new(size_t size);
+void *operator new[](size_t size);
+void *operator new(size_t size, const std::nothrow_t &) noexcept;
+void *operator new[](size_t size, const std::nothrow_t &) noexcept;
+void *operator new(size_t size, std::align_val_t align);
+void *operator new[](size_t size, std::align_val_t align);
+void *operator new(size_t size, std::align_val_t align, const std::nothrow_t &) noexcept;
+void *operator new[](size_t size, std::align_val_t align, const std::nothrow_t &) noexcept;
+void operator delete(void *p) noexcept;
+void operator delete[](void *p) noexcept;
+void operator delete(void *p, size_t size) noexcept;
+void operator delete[](void *p, size_t size) noexcept;
+void operator delete(void *p, const std::nothrow_t &) noexcept;
+void operator delete[](void *p, const std::nothrow_t &) noexcept;
+void operator delete(void *p, std::align_val_t align) noexcept;
+void operator delete[](void *p, std::align_val_t align) noexcept;
+void operator delete(void *p, size_t size, std::align_val_t align) noexcept;
+void operator delete[](void *p, size_t size, std::align_val_t align) noexcept;
+
+inline void *operator new(size_t, void *where) noexcept { return where; }
+inline void *operator new[](size_t, void *where) noexcept { return where; }
+inline void operator delete(void *, void *) noexcept {}
+inline void operator delete[](void *, void *) noexcept {}
+
+#endif

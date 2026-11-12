@@ -1,0 +1,34 @@
+--- a/netsurf/utils/filepath.c
++++ b/netsurf/utils/filepath.c
+@@ -308,6 +308,17 @@
+ }
+ 
+ 
++#ifdef __zdos__
++/* A drive's colon ("C:", "/C:") is part of a path, not a separator */
++static bool drive_colon(const char *start, const char *colon)
++{
++	if ((colon - start == 2) && (*start == '/' || *start == '\\'))
++		start++;
++	return (colon - start == 1) &&
++		(((*start | 0x20) >= 'a') && ((*start | 0x20) <= 'z'));
++}
++#endif
++
+ /* exported interface documented in filepath.h */
+ char **
+ filepath_path_to_strvec(const char *path)
+@@ -327,6 +338,13 @@
+ 	while (strc < (MAX_RESPATH - 2)) {
+ 		while ( (*eend != 0) && (*eend != ':') )
+ 			eend++;
++#ifdef __zdos__
++		while ((*eend == ':') && drive_colon(estart, eend)) {
++			eend++;
++			while ((*eend != 0) && (*eend != ':'))
++				eend++;
++		}
++#endif
+ 		elen = eend - estart;
+ 
+ 		if (elen > 1) {

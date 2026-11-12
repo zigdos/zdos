@@ -1,0 +1,26 @@
+/build/
+/docs/html/
+/dist/
+/scratchpad/
+
+# Zig caches and output
+.zig-cache/
+zig-cache/
+zig-out/
+# Compiler leftovers:
+*.o
+*.obj
+*.elf
+# Host tools built for the test scripts:
+/tools/disk/mkmfs3
+# Cargo output of Rust projects:
+target/
+# Python bytecode:
+__pycache__/
+*.pyc
+# IDEs and file managers
+*~
+*.swp
+.vscode/
+.idea/
+.DS_Store

@@ -1,0 +1,150 @@
+--- a/gblhdr.h
++++ b/gblhdr.h
+@@ -34,7 +34,7 @@
+ 
+ /* Not `unix`: that spelling is only predefined in GNU mode, so under -std=c11
+    this branch never fired and unistd.h was never pulled in here. */
+-#if defined(__unix__) || defined(__APPLE__)
++#if defined(__unix__) || defined(__APPLE__) || defined(__zdos__)
+ #include <sys/types.h>
+ #include <unistd.h>
+ #endif
+--- a/gui/guifuncs.c
++++ b/gui/guifuncs.c
+@@ -47,6 +47,25 @@
+ 
+ #define BIT(X) (1 << (X))
+ 
++#ifdef __zdos__
++#include <ctype.h>
++#include "zdos.h"
++/* ZDOS's drives as Windows gives them (bit 0 A:), for the drive list */
++static unsigned int GetLogicalDrives(void)
++{
++    char letters[27];
++    unsigned int bits = 0;
++    size_t n = zdos->drives->letters(letters, sizeof(letters));
++    for (size_t i = 0; i < n && i < sizeof(letters); i++) {
++        int c = toupper((unsigned char)letters[i]);
++        if (c >= 'A' && c <= 'Z') {
++            bits |= BIT(c - 'A');
++        }
++    }
++    return bits;
++}
++#endif
++
+ enum vtype { UB,
+     UW,
+     UD,
+@@ -1138,7 +1157,7 @@
+     }
+ 
+     if (lists & LIST_DN) {
+-#ifndef __UNIXSDL__
++#if !defined(__UNIXSDL__) || defined(__zdos__)
+         unsigned int drives = GetLogicalDrives(), i = 0;
+ #endif
+ 
+@@ -1147,7 +1166,7 @@
+             sort((intptr_t*)d_names, offset, (size_t)(*d_names), swapdirs);
+         }
+ 
+-#ifndef __UNIXSDL__
++#if !defined(__UNIXSDL__) || defined(__zdos__)
+         while (i < 26) {
+             if (drives & BIT(i)) {
+                 char drive[] = { '[', 'A', ':', ']', 0 };
+@@ -1314,7 +1333,7 @@
+         nameptr = d_names[GUIcurrentdircursloc + 2];
+ 
+         strcatslash(ZRomPath);
+-#ifndef __UNIXSDL__
++#if !defined(__UNIXSDL__) || defined(__zdos__)
+         if ((strlen(nameptr) == 4) && (nameptr[2] == ':')) // MS drives are stored as '[?:]',
+         { // so we can't use quick string catenation to browse through
+             strncpy(ZRomPath, nameptr + 1, 2);
+@@ -1557,7 +1576,7 @@
+     return (0);
+ }
+ 
+-#ifdef __UNIXSDL__
++#if defined(__UNIXSDL__) && !defined(__zdos__)
+ #define DriveCount() 0
+ #else
+ static unsigned int DriveCount(void)
+--- a/unix/net_transport.c
++++ b/unix/net_transport.c
+@@ -69,8 +69,9 @@
+ NetSocket net_open(int const udp)
+ {
+     int const type = udp ? SOCK_DGRAM : SOCK_STREAM;
+-    int fd = socket(AF_INET6, type, 0);
+     int const reuse = 1;
++#ifdef IPV6_V6ONLY
++    int fd = socket(AF_INET6, type, 0);
+     int const v6only = 0;
+ 
+     /* Dual-stack when there is IPv6, so one socket hears both families. */
+@@ -79,6 +80,9 @@
+     } else {
+         fd = socket(AF_INET, type, 0);
+     }
++#else
++    int fd = socket(AF_INET, type, 0); /* IPv4 only (ZDOS) */
++#endif
+     if (fd < 0) {
+         return NET_SOCKET_NONE;
+     }
+@@ -117,6 +121,7 @@
+     if (getsockname(s, (struct sockaddr*)&self, &self_len) != 0) {
+         return 0;
+     }
++#ifdef IPV6_V6ONLY
+     if (self.ss_family == AF_INET6) {
+         struct sockaddr_in6 addr;
+ 
+@@ -126,6 +131,7 @@
+         addr.sin6_port = htons(port);
+         return bind(s, (struct sockaddr*)&addr, sizeof(addr)) == 0;
+     }
++#endif
+     {
+         struct sockaddr_in addr;
+ 
+--- a/zpath.c
++++ b/zpath.c
+@@ -53,7 +53,13 @@
+     char pathbuf[PATH_SIZE];
+     const char* cfgdir = NULL;
+ 
+-#ifndef ZCONF
++#ifdef __zdos__
++    // %HOME%\.zsnes, made if missing
++    if (home) {
++        snprintf(pathbuf, sizeof(pathbuf), "%s" DIR_SLASH ".zsnes", home);
++        cfgdir = pathbuf;
++    }
++#elif !defined(ZCONF)
+     // Prefer the legacy ~/.zsnes directory if it already exists.
+     if (home) {
+         snprintf(pathbuf, sizeof(pathbuf), "%s/.zsnes", home);
+--- a/zpath.h
++++ b/zpath.h
+@@ -21,7 +21,15 @@
+ #include <stdbool.h>
+ #endif
+ 
+-#ifdef __UNIXSDL__
++#ifdef __zdos__
++/* ZDOS's paths are DOS's (C:\GAMES\X), as realpath and getcwd give them */
++#define DIR_SLASH "\\"
++#define DIR_SLASH_C '\\'
++#define DIR_SLASH_C_OTHER '/'
++#define ROOT_LEN 3 //"A:\"
++#define DIR_R_ACCESS (F_OK)
++#define IS_ABSOLUTE(path) ((*(path) == '\\') || (*(path) == '/') || (*(path) && ((path)[1] == ':')))
++#elif defined(__UNIXSDL__)
+ #define DIR_SLASH "/"
+ #define DIR_SLASH_C '/'
+ #define DIR_SLASH_C_OTHER '\\'

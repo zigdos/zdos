@@ -1,0 +1,5 @@
+DOSBox is under the GNU General Public License, version 2  (in separate file).
+DOSBOX is a separate program, its source code is DOSBox 0.74-3's sources
+as published plus ports/games/dosbox. It contains MAME's SN76496 and
+SAA1099 sound chips (src/hardware/mame; BSD-3-Clause, Nicola Salmoria,
+Juergen Buchmueller, Manuel Abadia), whose notices are in their source files.

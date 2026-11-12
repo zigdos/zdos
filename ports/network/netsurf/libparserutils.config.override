@@ -1,0 +1,4 @@
+# Its own decoders (UTF-8/16, ASCII, ISO-8859-x, Windows-125x), not iconv:
+# the SDK's iconv lacks Windows-1252, HTML5's default, so every page failed
+# with BadEncoding
+CFLAGS := $(CFLAGS) -DWITHOUT_ICONV_FILTER

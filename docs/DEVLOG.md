@@ -1,0 +1,58 @@
+# ZDOS devlog
+
+## v0.1
+- [x] Multiboot on QEMU.
+- [x] BIOS boot on QEMU.
+- [x] UEFI boot on QEMU.
+- [x] Printing messages.
+- [ ] Apps, Libraries.
+- [ ] Devices.
+
+## v0.2
+- [x] Editions: BIOS (x86-32), UEFI (x86-64, ARM64) and Metal (x86-64, ARM64; exits UEFI boot services). Raspberry Pi 4 is partially supported via the UEFI edition for ARM64.
+- [x] Build and install scripts.
+- [x] Metal: own drivers for NVMe, AHCI, xHCI USB (keyboard, mouse, mass storage), PS/2, the framebuffer and the serial port, interrupt-driven (MSI / MSI-X where available).
+- [x] BIOS: IDE disks, SATA disks on AHCI controllers.
+- [x] File systems: FAT12/16/32, Minix V3, ext2 (ext3 with a clean journal): read and write.
+- [x] Drive C: Minix V3 as default in the Metal and UEFI editions; FAT32 for the EFI System Partition and the BIOS edition.
+- [x] COMMAND.APP: a DOS-style shell with batch files, pipes, background tasks (`&`).
+- [x] ash: a POSIX shell with built-in `grep`, `sed`, `awk` and more.
+- [ ] Saving command history to disk (kept in RAM only for now).
+- [x] Disk utilities for formatting (MKMFS3, MKE2FS, FORMAT), checking (CHKMFS, CHKEXT2, CHKDSK), partitioning (FDISK), and SYS to install the operating system.
+- [ ] GPT support in FDISK.
+- [x] Apps: Picture viewer, a text editor (kilo), zmatrix, blocks and snake games.
+- [x] Testing and demo tools and apps.
+- [x] Archivers: zip and tar.
+- [x] Real-time kernel on Metal and BIOS.
+- [x] Metal: preemptive tasks with priorities on all CPU cores, threads, mutexes with priority inheritance, conditions, semaphores and futexes.
+- [x] POSIX signals, pipes and `poll`; Metal and BIOS: CPU faults in a program delivered as signals instead of halting ZDOS; Metal: a guard page under every stack (a stack overflow is caught instead of corrupting memory).
+- [x] BIOS: tasks, other cores; the kernel LZ4-compressed in ZIGDOS.SYS.
+- [x] UEFI: cooperative tasks (switching inside ZDOS), so `&`, threads, signals and services work there too.
+- [x] POSIX paths `/dev/null`, `/dev/tty`, `/dev/stdin|stdout|stderr` and `/tmp` (the TEMP folder).
+- [x] Program API: files, folders, drives, console, memory, time, running programs, system, keyboard, CPU cores, tasks, threads, signals, network, sound, gfx (256 colors and true color, mouse).
+- [x] SDK: C library with stdio, POSIX processes (`posix_spawn`, `waitpid`, `vfork`, `fork` as `vfork`), pthreads, `mmap`, wide characters, `regex.h`, `iconv`, C99 `math.h`; zdos-cc, a C compiler command for ZDOS on top of `zig cc`, for Makefiles and `configure`.
+- [x] SDK: C++ with libc++, `thread_local`, full-precision `long double` math; zdos-c++ compiler command.
+- [x] SDK: Rust programs with the full `std` (`zdos-cargo`).
+- [x] SDK: smaller Rust programs - without backtraces.
+- [x] `.ZDL` libraries and `.SYS` drivers.
+- [x] Networking: lwIP in the kernel, sockets, PING, IPCONFIG, NSLOOKUP, NETSTAT, ARP, FETCH with HTTPS; UEFI through the firmware, e1000 driver, Realtek cards via RTL8139.SYS, RTL8169.SYS; the loopback (127.0.0.1).
+- [x] Networking: routing, bridging, NAT.
+- [x] Network services: DHCPD, DNSD, HTTPZ, SSH, SSHD, SCP, SFTP, SSHKEY.
+- [x] Metal and BIOS: the network on a CPU core of its own, so network traffic doesn't slow programs down; tasks don't run on that core.
+- [x] Cloud drivers on Metal: virtio-blk, virtio-net, Amazon ENA (untested).
+- [x] Sound: the PC speaker, drivers for HD Audio, AC'97 and the Sound Blaster 16; a PLAY app for WAV sounds.
+- [x] Metal: USB devices plugged in and pulled out while ZDOS runs.
+- [x] BIOS: codepages for some languages.
+- [x] Spleen and Terminus fonts.
+- [x] Keyboard layouts for all editions.
+- [x] Clock, shutdown, restart and global variables.
+- [x] Reading and setting the screen resolution.
+- [ ] Memory protection between programs.
+- [x] Users and groups with logins, `su`, `sudo` for the group ADMINS, and passwords with Argon2id hashing.
+- [x] File permissions checked by ZDOS on every file operation (Unix owner, group and mode; derived from the file's location on FAT).
+- [x] Event queues (kqueue model); tokio and Axum run.
+- [x] Ports: Lua 5.5, MicroPython 1.29.
+- [x] Ports: NetSurf (web browser, framebuffer frontend) with `https` via mbedtls, libjpeg, libpng, WebP and JavaScript (Duktape).
+- [x] Ports: Doom (Freedoom), DOSBox 0.74-3, DGen, ZSNES, SDL 2, a partial SDL 1.2, TinyGL, PortableGL.
+- [x] Ports: FFmpeg, x264, MP3 (LAME), WebP, zlib, SQLite.
+- [x] Apps: PICTVIEW, IRCZ, NETSPEED, TAR, ZIP.
