@@ -6,6 +6,13 @@
 # glyph in code point order: code point u32, height rows of (width+7)/8 bytes,
 # the leftmost pixel in the high bit. Glyphs sit in the font's full cell
 # (FONTBOUNDINGBOX), cut at its edges.
+#
+# CP437'S SYMBOLS: Spleen draws some only in its CP437 files
+# (cp437/<family>-<W>x<H>-ibm-437.bdf, copied in too). A size
+# with one gets the characters it lacks from it; a size above
+# 8x16 without one (Spleen 12x24) gets the next larger one's,
+# scaled down. Bytes become code points through
+# fonts/codepages/CP437.zcp.
 import glob
 import os
 import struct
@@ -89,6 +96,82 @@ def cell_bytes(pixels, cw, ch):
     return bytes(data)
 
 
+def cp437_points():
+    path = os.path.join(ROOT, "fonts", "codepages", "CP437.zcp")
+    with open(path, "rb") as f:
+        data = f.read()
+    if data[:4] != b"ZCPG":
+        raise SystemExit(f"{path}: not a codepage file")
+    return struct.unpack("<256I", data[12:12 + 1024])
+
+
+def as_glyph(pixels, cell):
+    # Pixel rows filling the cell, as read_bdf's glyphs:
+    cw, ch, cx, cy = cell
+    per_row = (cw + 7) // 8
+    data = cell_bytes(pixels, cw, ch)
+    return (cw, ch, cx, cy), [data[r * per_row:(r + 1) * per_row] for r in range(ch)]
+
+
+def scaled_down(pixels, sw, sh, dw, dh):
+    # Each target pixel inked when the source pixels under it are
+    # at least 35% ink: keeps 2-pixel strokes whole and even.
+    fx, fy = sw / dw, sh / dh
+    out = []
+    for y in range(dh):
+        y0, y1 = y * fy, (y + 1) * fy
+        row = []
+        for x in range(dw):
+            x0, x1 = x * fx, (x + 1) * fx
+            ink = 0.0
+            for sy in range(int(y0), min(sh, -int(-y1 // 1))):
+                h = min(y1, sy + 1) - max(y0, sy)
+                for sx in range(int(x0), min(sw, -int(-x1 // 1))):
+                    w = min(x1, sx + 1) - max(x0, sx)
+                    if h > 0 and w > 0 and pixels[sy][sx]:
+                        ink += w * h
+            row.append(1 if ink >= 0.35 * fx * fy else 0)
+        out.append(row)
+    return out
+
+
+def larger_cp437(family, cw, ch):
+    # The smallest CP437 file of the family larger than cw x ch:
+    best = None
+    for path in glob.glob(os.path.join(FONTS, f"{family}-*x*-ibm-437.bdf")):
+        w, h = (int(v) for v in os.path.basename(path).split("-")[1].split("x"))
+        if w > cw and h > ch and (best is None or w < best[0]):
+            best = (w, path)
+    return best[1] if best else None
+
+
+def cp437_extra(family, cell, have):
+    # The CP437 characters the font lacks, from its own size's
+    # CP437 file, else (sizes above 8x16: Spleen 12x24) the next
+    # larger one's scaled down; {} if none.
+    cw, ch = cell[0], cell[1]
+    own = os.path.join(FONTS, f"{family}-{cw}x{ch}-ibm-437.bdf")
+    if os.path.exists(own):
+        src = own
+    else:
+        # The small sizes would lose too much of the drawing:
+        src = larger_cp437(family, cw, ch) if cw > 8 and ch > 16 else None
+    if src is None:
+        return {}
+    src_cell, src_glyphs = read_bdf(src)
+    points = cp437_points()
+    extra = {}
+    for byte, glyph in src_glyphs.items():
+        code = points[byte] if 0 <= byte < 256 else 0
+        if code == 0 or code in have:
+            continue
+        pixels = place(glyph, src_cell)
+        if src != own:
+            pixels = scaled_down(pixels, src_cell[0], src_cell[1], cw, ch)
+        extra[code] = as_glyph(pixels, cell)
+    return extra
+
+
 def write_zfn(path, cell, glyphs):
     cw, ch = cell[0], cell[1]
     out = bytearray(b"ZFNT")
@@ -105,13 +188,17 @@ def write_zfn(path, cell, glyphs):
 def main():
     made = []
     for bdf in sorted(glob.glob(os.path.join(FONTS, "*.bdf"))):
+        if bdf.endswith("-ibm-437.bdf"):
+            continue
         family = os.path.basename(bdf).split("-")[0]
         cell, glyphs = read_bdf(bdf)
+        extra = cp437_extra(family, cell, glyphs)
+        glyphs.update(extra)
         out = os.path.join(FONTS, f"{family}-{cell[0]}x{cell[1]}.zfn")
         size_bytes = write_zfn(out, cell, glyphs)
-        made.append((os.path.basename(out), len(glyphs), size_bytes))
-    for name, count, size in made:
-        print(f"{name}: {count} glyphs, {size} bytes")
+        made.append((os.path.basename(out), len(glyphs), len(extra), size_bytes))
+    for name, count, added, size in made:
+        print(f"{name}: {count} glyphs ({added} from CP437), {size} bytes")
 
 
 if __name__ == "__main__":
