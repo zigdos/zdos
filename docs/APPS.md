@@ -34,6 +34,7 @@ The applications that come with ZDOS, in `C:\APPS`, and the scripts in `C:\SCRIP
 [TAR](#tar)  
 [TERM](#term)  
 [VOLUME](#volume)  
+[ZC](#zc)  
 [ZDLTEST](#zdltest)  
 [ZIP](#zip)  
 [ZMATRIX](#zmatrix)  
@@ -133,6 +134,16 @@ With wildcards (`TAR C -gz DOCS\*.MD`) the matching files go into one `ARCHIVE.T
 ## VOLUME
 
 `VOLUME [0-100]`: shows or sets the sound card's output volume, for every program.
+
+## ZC
+
+`ZC [FOLDER]`: a two-panel file manager in the manner of Norton Commander. Two folders side by side, files colored by type as in the shells; copying, moving and deleting files and whole folders (merged into ones that exist, with progress; Esc stops), a command line, and the screen of commands under the panels (Ctrl+O). F1 lists the keys. It has a text viewer and nothing else of its own: other files open with the programs `ZC.CFG` names.
+
+`%HOME%\ZC.CFG` is made on the first start. Commands in it run in the panel's folder through the command interpreter; `%f` is the file at the cursor.
+
+- `[options]`: `viewer=` (`internal` or a command, for F3), `editor=` (F4), `frames=` (`auto`, `double`, `single`, `ascii`; `auto` takes single lines or ASCII on BIOS codepages without the frame characters), `humansize=` (sizes in KB, MB, GB), `theme=` (`blue`, `dark`), `textfiles=` (extensions Enter opens in the viewer).
+- `[open]`: `EXT,EXT=command`, what Enter runs for a file.
+- `[menu]`: `title=command`, F2's entries.
 
 ## ZDLTEST
 
