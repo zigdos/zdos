@@ -286,7 +286,8 @@ fn usesArgon2(stem: []const u8) bool {
 }
 
 fn hostTool(b: *std.Build, name: []const u8) *std.Build.Step.Compile {
-    const module = b.createModule(.{ .root_source_file = b.path(b.fmt("tools/build/{s}.zig", .{name})), .target = b.graph.host, .optimize = .ReleaseSafe });
+    // libc: localtime_r for the Minix drives' file times (minix.zig)
+    const module = b.createModule(.{ .root_source_file = b.path(b.fmt("tools/build/{s}.zig", .{name})), .target = b.graph.host, .optimize = .ReleaseSafe, .link_libc = true });
     module.addImport("zdos_fs", b.createModule(.{ .root_source_file = b.path("src/host_fs.zig"), .target = b.graph.host, .optimize = .ReleaseSafe }));
     module.addImport("mkmfs3", b.createModule(.{ .root_source_file = b.path("tools/disk/mkmfs3-host.zig"), .target = b.graph.host, .optimize = .ReleaseSafe }));
     return b.addExecutable(.{ .name = name, .root_module = module });

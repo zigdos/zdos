@@ -9,22 +9,23 @@ const mkmfs3 = @import("mkmfs3");
 const mfs = zdosfs.mfs;
 const platform = zdosfs.platform;
 
-// The time for new files:
+// The time for new files: local time, as ZDOS's clock gives it there
+// (ZDOS has no time zone; its Minix driver keeps that time as is):
+const ctime = @cImport(@cInclude("time.h"));
+
 pub const backend = struct {
     pub const clock = struct {
         pub fn now() ?platform.DateTime {
-            const secs: u64 = @intCast(@max(std.time.timestamp(), 0));
-            const es = std.time.epoch.EpochSeconds{ .secs = secs };
-            const day = es.getEpochDay().calculateYearDay();
-            const md = day.calculateMonthDay();
-            const ds = es.getDaySeconds();
+            var t: ctime.time_t = ctime.time(null);
+            var tm: ctime.struct_tm = undefined;
+            if (ctime.localtime_r(&t, &tm) == null) return null;
             return .{
-                .year = day.year,
-                .month = md.month.numeric(),
-                .day = @as(u8, md.day_index) + 1,
-                .hour = ds.getHoursIntoDay(),
-                .minute = ds.getMinutesIntoHour(),
-                .second = ds.getSecondsIntoMinute(),
+                .year = @intCast(tm.tm_year + 1900),
+                .month = @intCast(tm.tm_mon + 1),
+                .day = @intCast(tm.tm_mday),
+                .hour = @intCast(tm.tm_hour),
+                .minute = @intCast(tm.tm_min),
+                .second = @intCast(@min(tm.tm_sec, 59)),
             };
         }
     };
