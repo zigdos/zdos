@@ -4,6 +4,7 @@ const uefi = std.os.uefi;
 const platform = @import("../../platform.zig");
 const arch = @import("../../arch.zig");
 const Counter = @import("../../arch/counter.zig").Counter;
+const wallclock = @import("../wallclock.zig");
 
 // UEFI has no millisecond counter: the TSC is calibrated
 // against a 10 ms firmware Stall at startup
@@ -61,12 +62,18 @@ pub fn sleep(ms: u32) void {
 }
 
 pub fn now() ?platform.DateTime {
+    return wallclock.now(&firmwareNow, millis());
+}
+
+// UEFI's GetTime: slow (the clock chip's ports), so only now and then
+fn firmwareNow() ?platform.DateTime {
     var t: uefi.Time = undefined;
     if (uefi.system_table.runtime_services.getTime(&t, null) != .success) return null;
     return .{ .year = t.year, .month = t.month, .day = t.day, .hour = t.hour, .minute = t.minute, .second = t.second };
 }
 
 pub fn set(dt: platform.DateTime) bool {
+    defer wallclock.forget();
     const rs = uefi.system_table.runtime_services;
     // Start from the current record to keep
     // its time zone and daylight fields

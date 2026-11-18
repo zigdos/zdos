@@ -6,6 +6,7 @@ const Counter = @import("../../arch/counter.zig").Counter;
 const port = @import("../../arch/x86_port.zig");
 const cmos = @import("../../drivers/cmos.zig");
 const acpi = @import("acpi.zig");
+const wallclock = @import("../wallclock.zig");
 
 var tsc_start: u64 = 0;
 var tsc_per_ms: u64 = 1;
@@ -87,9 +88,10 @@ pub fn sleep(ms: u32) void {
 }
 
 pub fn now() ?platform.DateTime {
-    return cmos.now();
+    return wallclock.now(&cmos.now, millis());
 }
 
 pub fn set(dt: platform.DateTime) bool {
+    defer wallclock.forget();
     return cmos.set(dt);
 }
