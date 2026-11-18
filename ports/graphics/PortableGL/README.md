@@ -49,4 +49,4 @@ Frames per second in QEMU (640×480, `SHADERTOY` 320×240 with its first shader;
 | LESSON6   | 158          | 157         | 11          | 3                   |
 | SHADERTOY | 310          | 390         | 30          | 6.6                 |
 
-`EX1` and `EX3`: 320 and 430 on metal-x86_64. On BIOS 640×480 is VGA's 16 colors (mode 12h), where the crate's browns come out green; `PGLCUBE 320 200` uses mode 13h.
+`EX1` and `EX3`: 320 and 430 on metal-x86_64. On BIOS 640×480 is a true-color VESA mode; without VESA it is VGA's 16 colors (mode 12h), where the crate's browns come out green, and `PGLCUBE 320 200` uses mode 13h.

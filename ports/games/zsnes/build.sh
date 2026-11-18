@@ -3,7 +3,7 @@
 # build/zsnes/tree gets zsnes-zdos.patch and config.h, on SDL 2 through
 # SDL3/SDL.h here; parsegen.py (python3) makes the .psr tables. x86
 # (BIOS) builds unix/sw_draw_vga.c instead of unix/sw_draw.c: the latter
-# with zsnes-zdos-vga.patch (VGA mode 13h).
+# with zsnes-zdos-vga.patch (VGA mode 13h, without VESA).
 #   build.sh [x86|x86_64|arm64]...   (none: all three)
 source "$(dirname "$0")/../../common.sh"
 PORT=$ZIGDOS/ports/games/zsnes

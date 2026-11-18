@@ -1,5 +1,5 @@
 // PICTVIEW FILE: views BMP, GIF, PNG or JPEG; arrow keys browse.
-// Without true color (BIOS: VGA 320 x 200): 256 colors (Display).
+// Without true color (BIOS without VESA: VGA 320 x 200): 256 colors (Display).
 const std = @import("std");
 const zdos = @import("zdos/zdos.zig");
 const gfx = @import("zdos/gfx.zig");
@@ -352,10 +352,11 @@ fn viewGif(file: zdos.File, file_size: u64, path: []const u8) Error!Navigation {
     return waitForNavigation();
 }
 
-// THE SCREEN: true color where it has it, else 256 colors (BIOS:
-// VGA 320 x 200). There a picture gets a fixed palette (6 levels of
-// red, green and blue, 40 grays), Floyd-Steinberg dithered; one whose
-// colors are all a palette's (a GIF frame, an 8-bit BMP) that palette.
+// THE SCREEN: true color where it has it, else 256 colors
+// (BIOS without VESA: VGA 320 x 200). There a picture gets a
+// fixed palette (6 levels of red, green and blue, 40 grays),
+// Floyd-Steinberg dithered; one whose colors are all a
+// palette's (a GIF frame, an 8-bit BMP) gets that palette.
 const Display = struct {
     width: u32,
     height: u32,

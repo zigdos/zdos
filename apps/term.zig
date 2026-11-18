@@ -1,5 +1,6 @@
 // TERM [FONT]: a terminal in a tab of its own, with COMSPEC on a pty
-// and ssh/vt.zig as the emulator. BIOS: 640 x 480 in 16 colors.
+// and ssh/vt.zig as the emulator.
+// BIOS without VESA: 640 x 480 in 16 colors.
 // Alt+Tab / Win+Tab switches tabs. FONT: spleen-8x16, terminus-12x24 ...
 const std = @import("std");
 const zdos = @import("zdos/zdos.zig");

@@ -762,12 +762,12 @@ pub const GfxApi = extern struct {
     screen: *const fn (info: *ScreenInfo) callconv(cc) bool,
     // A true-color picture: draw_rgb takes width * height
     // pixels 0x00RRGGBB (bytes blue, green, red, unused);
-    // not on BIOS (VGA mode 13h)
+    // BIOS: a VESA mode (none without)
     begin_rgb: *const fn (width: u32, height: u32) callconv(cc) bool,
     draw_rgb: *const fn (pixels: [*]const u32) callconv(cc) void,
     // The screen modes the firmware offers (RESOLUTION= in
     // SYSTEM.CFG), smallest first: up to max into sizes; returns
-    // how many there are (BIOS: 320 x 200)
+    // how many there are (BIOS: 320 x 200, 640 x 480, VESA's)
     modes: *const fn (sizes: [*]ScreenSize, max: usize) callconv(cc) usize,
     // Tabs: each program in graphics has its own screen;
     // Alt+Tab or Win+Tab brings the next to the front (the

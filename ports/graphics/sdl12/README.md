@@ -40,4 +40,4 @@ Not there: OpenGL (`SDL_OPENGL` modes fail, `SDL_GL_*` fail), YUV overlays and C
 
 - 8 bits as palette indexes (`ZDOS_PIXELS_INDEX8`, the palette from `SDL_SetColors`), 16 as RGB565, 32 as XRGB8888; 15 and 24 are converted to 32 at each flip.
 - UEFI and metal: a picture up to the screen's size is centered and scaled up by a whole number, a larger one scaled down to fit.
-- BIOS (VGA): a picture up to 320×200 goes to mode 13h, 8-bit ones with their own palette. A picture up to 320 wide and 201 to 240 high (a console's 224 or 240 lines) is shown as **its middle 200 lines** in mode 13h, as DOS-era emulators did, instead of being shrunk or going to the 16-color mode 12h. Larger pictures go to mode 12h (`zdos_media.h`).
+- BIOS: with VESA, as on UEFI and metal, in a true-color VESA mode. Without VESA (VGA): a picture up to 320×200 goes to mode 13h, 8-bit ones with their own palette. A picture up to 320 wide and 201 to 240 high (a console's 224 or 240 lines) is shown as **its middle 200 lines** in mode 13h, as DOS-era emulators did, instead of being shrunk or going to the 16-color mode 12h. Larger pictures go to mode 12h (`zdos_media.h`).

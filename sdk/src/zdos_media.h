@@ -27,7 +27,7 @@ enum {
 typedef struct {
     int width, height;   /* the picture's */
     int out_w, out_h;    /* what ZDOS is given (scaled to fit) */
-    bool true_color;     /* false: the BIOS's VGA modes */
+    bool true_color;     /* false: VGA (BIOS without VESA) */
     int colors;          /* true color: 0, else 256 or 16 */
 } zdos_display_info;
 

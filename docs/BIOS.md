@@ -27,7 +27,7 @@ Type HELP for a list of commands
 - [ ] Retro hardware (Pentium II / III / IV): not tested yet.
 - [x] Keyboard: full support, with key releases and modifier keys on their own (UEFI can't do either). Num Lock starts as the BIOS left it.
 - [x] PS/2 mouse with wheel; USB keyboards and mice through the BIOS's legacy emulation.
-- [x] Graphics for programs: VGA mode 13h, 320 x 200 in 256 colors, and mode 12h, 640 x 480 in 16.
+- [x] Graphics for programs: the VESA BIOS's modes (VBE 2.0 and up, linear framebuffer) in 256 colors and true color, and VGA mode 13h, 320 x 200 in 256 colors; without VESA, mode 12h, 640 x 480 in 16, for larger pictures.
 - [x] Screen: 80 x 25 text, background colors 0-7 only.
 - [x] Long file names (case-insensitive for ASCII letters only); no 260-character path limit.
 - [x] Floppy changes are noticed ([below](#changing-floppies)).

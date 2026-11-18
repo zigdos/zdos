@@ -7,7 +7,7 @@
 +#ifdef __zdos__
 +#include "zdos.h"
 +
-+// BIOS: VGA MODE 13H, 256 X 200 OF THE PICTURE IN 256 COLORS
++// BIOS WITHOUT VESA: VGA MODE 13H, 256 X 200 OF THE PICTURE IN 256 COLORS
 +
 +extern uint16_t resolutn;
 +static int vga_on = -1; // -1: not known yet

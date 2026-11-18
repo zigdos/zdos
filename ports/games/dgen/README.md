@@ -53,7 +53,7 @@ The keypad works with Num Lock on or off (on BIOS and metal; UEFI's firmware rep
 ## Display
 
 - UEFI and metal: 32-bit, the 320×224 picture and the message bar (frames per second with `bool_fps = true`, messages such as "Saved state to slot 0."), scaled up by a whole number to the screen.
-- BIOS: VGA mode 13h, 320×200 in 256 colors: DGen's 8-bit output (the Genesis shows up to 64 colors at once, set with `SDL_SetColors`), and of the 224 lines the middle 200 (12 cut at the top, 12 at the bottom; PAL's 240: 20 and 20), as DOS-era emulators did, instead of shrinking the picture. There is no message bar: the partial SDL 1.2 does the crop (any 8-bit 320×201-240 picture on VGA).
+- BIOS: a true-color VESA mode, the whole picture. Without VESA, VGA mode 13h, 320×200 in 256 colors: DGen's 8-bit output (the Genesis shows up to 64 colors at once, set with `SDL_SetColors`), and of the 224 lines the middle 200 (12 cut at the top, 12 at the bottom; PAL's 240: 20 and 20), as DOS-era emulators did, instead of shrinking the picture. There is no message bar: the partial SDL 1.2 does the crop (any 8-bit 320×201-240 picture on VGA).
 - Sound needs a card's driver: HDA on the metal editions (also AC'97 on x86-64), HDA, AC'97 or SB16 on BIOS; the UEFI editions have none, DGen plays silently there.
 
 ## Tests

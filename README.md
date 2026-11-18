@@ -300,7 +300,7 @@ ZDOS has three editions: BIOS (x86-32), UEFI (x86-64, ARM64) and Metal (x86-64, 
 | Network                 | [•]  | [•]  |  [•]  |
 | Keyboard and mouse      | [•]  | [•]  |  [•]  |
 | Key releases            | [•]  |  -   |  [•]  |
-| True color graphics     |  -   | [•]  |  [•]  |
+| True color graphics     | [•]  | [•]  |  [•]  |
 | Sound cards             | [•]  |  -   |  [•]  |
 | Preemptive multitasking | [•]  |  -   |  [•]  |
 | Real time               | [•]  |  -   |  [•]  |

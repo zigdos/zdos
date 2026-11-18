@@ -37,7 +37,7 @@ for (;;) {
 zdos-cc -O2 demo.c -lTinyGL -o DEMO.APP
 ```
 
-A larger picture than the screen is scaled down, a smaller one centered (and scaled up on UEFI and metal); the BIOS edition dithers it to VGA mode 13h (up to 320×200) or 12h. A 16-bit TinyGL (`TGL_FEATURE_16_BITS` in `zfeatures.h`, rebuilt) would be `ZDOS_PIXELS_RGB565`.
+A larger picture than the screen is scaled down, a smaller one centered (and scaled up on UEFI and metal); the BIOS edition shows it in a true-color VESA mode (without VESA dithered to VGA mode 13h, up to 320×200, or 12h). A 16-bit TinyGL (`TGL_FEATURE_16_BITS` in `zfeatures.h`, rebuilt) would be `ZDOS_PIXELS_RGB565`.
 
 ## Demos
 

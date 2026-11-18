@@ -657,7 +657,7 @@ C:\>path ;                  clears it: only the current directory is searched
 
 ## SCREEN
 
-`SCREEN` *(program)*: lists the screen modes the firmware offers, smallest first, and shows the one in use in brackets (`[1280x800]`), in four columns. Any of them can go into `RESOLUTION=` in `SYSTEM.CFG` (see [SYSTEM.CFG](CONFIG.md)). The Metal editions record the list at startup, before leaving the firmware; UEFI asks the firmware each time. BIOS shows its one graphics mode, 320x200.
+`SCREEN` *(program)*: lists the screen modes the firmware offers, smallest first, and shows the one in use in brackets (`[1280x800]`), in four columns. Any of them can go into `RESOLUTION=` in `SYSTEM.CFG` (see [SYSTEM.CFG](CONFIG.md)). The Metal editions record the list at startup, before leaving the firmware; UEFI asks the firmware each time. BIOS lists 320x200, 640x480 and the VESA BIOS's modes; in brackets the one programs get for the whole screen, the largest true-color mode up to 1024x768 (`RESOLUTION=` has no effect there).
 
 ## SET
 

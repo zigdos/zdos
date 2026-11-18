@@ -129,7 +129,7 @@ With wildcards (`TAR C -gz DOCS\*.MD`) the matching files go into one `ARCHIVE.T
 
 ## TERM
 
-`TERM [font]`: another console in a tab of its own, running the command interpreter (`COMSPEC`) as a VT terminal; Alt+Tab or Win+Tab switches tabs. `font` is one of ZDOS's fonts (`spleen-8x16`, `terminus-12x24` ...). On BIOS 640 x 480 in 16 colors. See [API](API.md#graphics-game-keys-and-mouse-gfxzig).
+`TERM [font]`: another console in a tab of its own, running the command interpreter (`COMSPEC`) as a VT terminal; Alt+Tab or Win+Tab switches tabs. `font` is one of ZDOS's fonts (`spleen-8x16`, `terminus-12x24` ...). On BIOS the screen's VESA mode in true color (without VESA 640 x 480 in 16 colors). See [API](API.md#graphics-game-keys-and-mouse-gfxzig).
 
 ## VOLUME
 

@@ -1,6 +1,7 @@
 /* zdos_media.h's display: pictures in common pixel formats converted, scaled
    and dithered to what the screen shows (gfx begin_rgb / draw_rgb, or on
-   BIOS begin / palette / draw), with an arrow pointer drawn in. */
+   a BIOS without VESA begin / palette / draw), with an arrow pointer
+   drawn in. */
 #include <stdlib.h>
 #include <string.h>
 #include "zdos.h"
@@ -88,7 +89,7 @@ bool zdos_display_open(int width, int height, int format) {
         d.kind = OUT_RGB;
         d.colors = 0;
     } else {
-        /* BIOS: 13h for small pictures, else 12h; 13h shrunk if 12h fails: */
+        /* BIOS without VESA: 13h, else 12h (13h shrunk if it fails): */
         if (width > 320 || height > 200) {
             fit(width, height, 640, 480, true, &ow, &oh);
             ok = zdos->gfx->begin((uint32_t)ow, (uint32_t)oh);

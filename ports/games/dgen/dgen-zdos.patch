@@ -141,7 +141,7 @@
  RCVAR(dgen_buttons, 0);
  RCVAR(dgen_fullscreen, 0);
 +#if defined(__zdos__) && defined(__i386__)
-+// BIOS: no message bar, the 224 lines cropped to VGA's 200 (mini SDL)
++// BIOS: no message bar; without VESA 224 lines cut to VGA's 200 (mini SDL)
 +RCVAR(dgen_info_height, 0);
 +#elif defined(__zdos__)
 +// The 8x13 font's bar under the 320 x 224 picture

@@ -251,14 +251,14 @@ Each program in graphics has a tab: its own screen, mode, palette and last pictu
 - `setTitle(name)` (C: `gfx->set_title(name, len)`): the tab's name (SDL's window title); its program's name until set.
 - `textInput(buf)` (C: `gfx->text_input`): the characters typed since the last call, UTF-8 with the layout applied (SDL's text input).
 
-- `begin(width, height)` (C: `gfx->begin`): graphics for a `width` x `height` picture, scaled up by a whole number and centered; BIOS: VGA mode 13h, or 12h (16 colors) up to 640×480. The palette starts black.
+- `begin(width, height)` (C: `gfx->begin`): graphics for a `width` x `height` picture, scaled up by a whole number and centered; BIOS: VGA mode 13h up to 320×200, a larger picture the smallest 256-color VESA mode it fits (without VESA mode 12h, 16 colors, up to 640×480). The palette starts black.
 - `beginDosAspect(width, height)` (C: `gfx->begin_dos_aspect`): the same, shown 4:3 as a DOS screen showed 320×200 (UEFI; on BIOS the monitor does it).
 - `palette(first, colors)` with `[N][3]u8` (C: `gfx->palette(first, count, rgb)`): set colors from `first` on, red, green, blue 0-255; takes effect at the next `draw` at the latest.
 - `draw(pixels)` (C: `gfx->draw(pixels)`): show a picture, `width * height` palette indexes, row after row from the top left.
 - `end()` (C: `gfx->end()`): back to the text screen as it was. ZDOS does it too when the program ends.
-- `screen()` -> `Error!ScreenInfo` (C: `gfx->screen`): the screen's `width`, `height` and `true_color`; a picture that size is shown 1:1, one half as wide and high doubled.
-- `beginRgb(width, height)`, `drawRgb(pixels)` (C: `begin_rgb`, `draw_rgb`): a true-color picture of `0x00RRGGBB` pixels; not on BIOS.
-- `modes(buf)` (C: `gfx->modes(sizes, max)`): the screen modes the firmware offers (`ScreenSize`: width, height), smallest first, as many as fit; C returns how many there are. BIOS: 320 x 200, 640 x 480. `SCREEN` lists them.
+- `screen()` -> `Error!ScreenInfo` (C: `gfx->screen`): the screen's `width`, `height` and `true_color`; a picture that size is shown 1:1, one half as wide and high doubled. BIOS: the largest true-color VESA mode up to 1024×768 (without VESA 320×200, not true color).
+- `beginRgb(width, height)`, `drawRgb(pixels)` (C: `begin_rgb`, `draw_rgb`): a true-color picture of `0x00RRGGBB` pixels; on BIOS in the smallest true-color VESA mode it fits (`NotSupported` without VESA).
+- `modes(buf)` (C: `gfx->modes(sizes, max)`): the screen modes the firmware offers (`ScreenSize`: width, height), smallest first, as many as fit; C returns how many there are. BIOS: 320 x 200, 640 x 480 and the VESA modes. `SCREEN` lists them.
 - `keyEvent()` -> `Error!?KeyEvent` (C: `gfx->key_event`): the next key going down or up: its set 1 scan code (E0 keys as `0xE000 | code`, the same on every layout), `pressed`, `repeat`, `mods`. Keys read this way no longer reach `readKey`.
 - `mouse()` -> `Error!Mouse` (C: `gfx->mouse`): the movement since the last call (`dx`, `dy`), `wheel` and `buttons`; `NotSupported` without a mouse.
 - `arrow`, `drawArrow(...)`, `small_arrow`, `drawSmallArrow(...)` (Zig): the arrow cursors from `icons/`, drawn into a picture; ZDOS draws no pointer itself.
@@ -274,7 +274,7 @@ gfx.draw(&picture);      // picture: [320 * 200]u8
 
 |                        | BIOS               | UEFI (x86-64, ARM64)    |
 | ---------------------- | ------------------ | ----------------------- |
-| Screen                 | VGA 13h, 12h | firmware's (GOP, `Blt`) |
+| Screen                 | VESA, VGA 13h (12h without VESA) | firmware's (GOP, `Blt`) |
 | Picture too large      | `NotSupported`     | `NotSupported`          |
 | Text printed meanwhile | shown afterwards   | lost                    |
 | `keyEvent`             | yes                | `NotSupported`          |

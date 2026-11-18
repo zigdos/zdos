@@ -45,7 +45,7 @@ Keys: DOSBox's own. Ctrl+F10 frees the mouse (a click takes it again), Alt+Enter
 ## Display
 
 - `output=surface` (the only one): DOSBox's picture as the SDL surface, which ZDOS centers and scales up by a whole number. `scaler=none` is enough (ZDOS scales), `normal2x` (the default) costs time for nothing; `fullresolution=original`.
-- 8, 16 or 32 bits as DOSBox picks; the BIOS edition shows up to 320×200 in mode 13h, larger modes in 640×480 with 16 colors.
+- 8, 16 or 32 bits as DOSBox picks; the BIOS edition shows them in a true-color VESA mode (Warcraft II's 640×480 in 640×480); without VESA up to 320×200 in mode 13h, larger modes in 640×480 with 16 colors.
 
 ## Tests
 

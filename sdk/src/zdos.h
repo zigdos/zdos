@@ -612,12 +612,12 @@ typedef struct {
        centered) and whether true color works; false without graphics */
     bool (ZDOS_CALL *screen)(zdos_screen_info *info);
     /* A true-color picture: draw_rgb takes width * height pixels 0x00RRGGBB
-       (bytes blue, green, red, unused); not on BIOS (VGA mode 13h) */
+       (bytes blue, green, red, unused); BIOS: a VESA mode (none without) */
     bool (ZDOS_CALL *begin_rgb)(uint32_t width, uint32_t height);
     void (ZDOS_CALL *draw_rgb)(const uint32_t *pixels);
     /* The screen modes the firmware offers (RESOLUTION= in
        SYSTEM.CFG), smallest first: up to max into sizes; returns how
-       many there are (BIOS: 320 x 200) */
+       many there are (BIOS: 320 x 200, 640 x 480 and the VESA modes) */
     size_t (ZDOS_CALL *modes)(zdos_screen_size *sizes, size_t max);
     /* Tabs: each program in graphics has its own screen; Alt+Tab or Win+Tab
        brings the next to the front (the text console is one too). Only the
