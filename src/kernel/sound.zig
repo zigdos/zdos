@@ -80,22 +80,36 @@ pub fn write(program: *const anyopaque, handle: i32, data: []const u8) Error!usi
         const max_in_frames = @max(1, (@as(u64, room_frames) * in_rate / out_rate) -| 2);
         const chunk = @min(data.len - done, @as(usize, @intCast(max_in_frames)) * frame);
         const n = convert(data[done..][0..chunk], frame, &out);
-        if (!feed(c, out[0..n])) return done + chunk; // a signal: what is queued stays
+        if (!feed(c, program, out[0..n])) return done + chunk; // a signal, or closed: what is queued stays
         done += chunk;
     }
     return done;
 }
 
 // Every byte of out into the card, waiting while it is full;
-// false if a signal ended the wait
-fn feed(c: *const drv.SoundCard, out: []const u8) bool {
+// false if a signal ended the wait or the program's other
+// thread closed the card meanwhile
+fn feed(c: *const drv.SoundCard, program: *const anyopaque, out: []const u8) bool {
     var at: usize = 0;
     while (at < out.len) {
         const n = c.write(c.ctx, out[at..].ptr, out.len - at);
         at += n;
-        if (n == 0 and !tasks.sleep(2)) return false;
+        if (n > 0) continue;
+        if (!pause(2)) return false;
+        if (owner != program) return false;
     }
     return true;
+}
+
+// A wait for the card with the kernel lock given up: else
+// the console, keys (Ctrl+C) and the program's other threads
+// wait as long as the card is full
+fn pause(ms: u32) bool {
+    const held = tasks.dropKernel();
+    defer if (held) {
+        _ = tasks.enterKernel();
+    };
+    return tasks.sleep(ms);
 }
 
 // Input bytes (whole frames, with any left from the last write)
@@ -179,7 +193,8 @@ pub fn close(program: *const anyopaque, handle: i32, drop: bool) Error!void {
     if (!drop) {
         const until = platform.clock.millis() + c.queued(c.ctx) / 4 * 1000 / out_rate + 1000;
         while (c.queued(c.ctx) > 0 and platform.clock.millis() < until) {
-            if (!tasks.sleep(5)) break;
+            if (!pause(5)) break;
+            if (owner != program) return; // closed meanwhile
         }
     }
     c.stop(c.ctx);
