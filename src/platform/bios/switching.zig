@@ -246,9 +246,14 @@ pub fn start(f: Callback, done: *const fn () void) bool {
 var use_lapic = false;
 var in_bios_call = false;
 
-// SEVERAL CORES (B4): TASKS ON THE OTHER CORES TOO, AS ON
-// METAL A core's index from its APIC ID (GS holds the
-// thread pointer here)
+// SEVERAL CORES (B4): TASKS ON THE OTHER CORES TOO, AS ON METAL
+// A core's index from its task register: each core loads
+// its own selector once, and STR reads it without an exit to
+// a hypervisor (the APIC ID's MMIO read was one, and the
+// kernel asks constantly). GS holds the thread pointer and
+// BIOS calls reload the data segments; nothing loads TR.
+// The task state segment is never used (all in ring 0).
+// Without the GDT room: the APIC ID.
 
 const max_cores = 64;
 var index_of = [_]u8{0xFF} ** 256;
@@ -260,13 +265,81 @@ pub fn setCoreIndex(i: usize) void {
     const id = lapic.id();
     index_of[id & 0xFF] = @intCast(i);
     apic_of[i] = id;
+    loadTaskRegister(i);
     registered[i] = true;
     arch.coreIndex = &coreIndex;
 }
 
 pub fn coreIndex() usize {
-    const i = index_of[lapic.id() & 0xFF];
-    return if (i == 0xFF) 0 else i;
+    return ownIndex() orelse 0;
+}
+
+// Null: a core not registered
+fn ownIndex() ?usize {
+    if (tr_cores) {
+        const sel = asm volatile ("str %[r]"
+            : [r] "=r" (-> u16),
+        );
+        return if (sel >= tss_first) (sel - tss_first) / 8 else null;
+    }
+    const id = lapic.id() & 0xFF;
+    const i = index_of[id];
+    return if (i == 0xFF) null else i;
+}
+
+// A GDT with stage 2's entries and one TSS descriptor a core
+// after them, loaded only for LTR (stage 2's again after it:
+// BIOS calls load that one anyway; TR keeps its selector)
+const tss_first = 0x30;
+var gdt: [tss_first / 8 + max_cores]u64 align(8) = @splat(0);
+var tss: [104]u8 align(16) = @splat(0);
+var tr_cores = false;
+var tr_failed = false;
+var gdt_lock = std.atomic.Value(bool).init(false);
+
+fn loadTaskRegister(i: usize) void {
+    if (tr_failed) return;
+    const flags = asm volatile ("pushfl; cli; popl %[f]"
+        : [f] "=r" (-> u32),
+        :
+        : "memory"
+    );
+    defer if (flags & 0x200 != 0) asm volatile ("sti" ::: "memory");
+    while (gdt_lock.cmpxchgWeak(false, true, .acquire, .monotonic) != null) std.atomic.spinLoopHint();
+    defer gdt_lock.store(false, .release);
+    var old: [6]u8 align(4) = undefined;
+    asm volatile ("sgdt (%[p])"
+        :
+        : [p] "r" (&old),
+        : "memory"
+    );
+    const old_limit = std.mem.readInt(u16, old[0..2], .little);
+    const old_base = std.mem.readInt(u32, old[2..6], .little);
+    // Stage 2's entries reaching tss_first: the APIC ID
+    if (old_limit + 1 > tss_first or i >= max_cores) {
+        tr_failed = true;
+        tr_cores = false;
+        return;
+    }
+    const from: [*]const u64 = @ptrFromInt(old_base);
+    @memcpy(gdt[0 .. (old_limit + 1) / 8], from[0 .. (old_limit + 1) / 8]);
+    // 32-bit TSS, available, present, ring 0; limit 103:
+    const b: u64 = @intFromPtr(&tss);
+    gdt[tss_first / 8 + i] = 103 | ((b & 0xFF_FFFF) << 16) | (@as(u64, 0x89) << 40) | ((b >> 24) << 56);
+    var new: [6]u8 align(4) = undefined;
+    std.mem.writeInt(u16, new[0..2], @sizeOf(@TypeOf(gdt)) - 1, .little);
+    std.mem.writeInt(u32, new[2..6], @intCast(@intFromPtr(&gdt)), .little);
+    asm volatile (
+        \\lgdt (%[n])
+        \\ltr %[s]
+        \\lgdt (%[o])
+        :
+        : [n] "r" (&new),
+          [o] "r" (&old),
+          [s] "r" (@as(u16, @intCast(tss_first + 8 * i))),
+        : "memory"
+    );
+    tr_cores = true;
 }
 
 // Another core joins: its own APIC timer for deadlines
@@ -283,8 +356,8 @@ pub fn startCore() bool {
 // Whether this core runs tasks (a fault in a program's code
 // there is a signal, as on core 0)
 pub fn onTaskCore() bool {
-    const i = index_of[lapic.id() & 0xFF];
-    return i != 0xFF and scheduling[i];
+    const i = ownIndex() orelse return false;
+    return scheduling[i];
 }
 
 // Core i, idle, looks for a ready task now

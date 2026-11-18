@@ -181,6 +181,7 @@ fn crashScreen(frame: *const arch.ExceptionFrame) noreturn {
         frame.eax,    frame.ebx,                               frame.ecx, frame.edx,        frame.esi,
         frame.edi,    frame.ebp,
     }) catch "\n*** CPU exception. System halted.\n";
+    platform.serial.toPolled(); // interrupts off: written at once
     console.setColor(15, 4);
     console.write(text);
     halt();
