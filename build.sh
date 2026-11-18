@@ -10,7 +10,7 @@ shopt -s nullglob    # an empty folder gives no names
 LC_COLLATE=C         # names in byte order, as zig build copies them
 cd "$(dirname "${BASH_SOURCE[0]}")"
 mkdir -p build/DATA
-SYS_DISK_SIZE=128
+SYS_DISK_SIZE=512
 
 # APPS
 

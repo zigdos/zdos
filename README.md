@@ -6,7 +6,7 @@ A real-time operating system in the spirit of DOS for 64-bit PCs and 64-bit ARM 
 ZDOS version 0.2 METAL
 
 Drives:
-  C:              minix       128 MB
+  C:              minix       512 MB
   D:  DATA        ext2        128 MB
 
 Type HELP for a list of commands
