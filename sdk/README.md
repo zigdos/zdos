@@ -137,7 +137,7 @@ The examples in `rust/examples/` build the same way; their `target/` goes to `~/
 
 ## Display, input and sound (zdos_media.h)
 
-A small layer over the groups `gfx`, `console` and `sound` for libraries and games that bring their own frames and want events (SDL 2's ZDOS backends use it): `zdos_display_*` shows frames in common pixel formats scaled to the screen, `zdos_input_poll` gives key (USB HID scancodes), text, mouse and focus events, `zdos_audio_start` runs a sound thread. The header describes each call.
+A small layer over the groups `gfx`, `console` and `sound` for libraries and games that bring their own frames and want events (SDL 2's ZDOS backends use it): `zdos_display_*` shows frames in common pixel formats scaled to the screen, `zdos_input_poll` gives key (USB HID scancodes), text, mouse and focus events, `zdos_audio_start` runs a sound thread, woken once a period (`zdos_audio_pause` stops its wake-ups). The header describes each call.
 
 ## The C library
 

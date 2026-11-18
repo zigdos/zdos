@@ -89,9 +89,12 @@ uint16_t zdos_key_to_hid(uint16_t code);
 typedef void (*zdos_audio_fill)(void *user, uint8_t *buf, size_t len);
 
 /* Plays rate Hz, channels 1-2, bits 8 (unsigned) or 16 (signed): a thread
-   asks fill for frames frames at a time and writes them to the card. False
-   with the reason in programs->last_error (no card, another program has it). */
+   asks fill for frames frames once a period (frames at rate) and writes
+   them to the card. False with the reason in programs->last_error (no
+   card, another program has it). */
 bool zdos_audio_start(uint32_t rate, uint32_t channels, uint32_t bits, uint32_t frames, zdos_audio_fill fill, void *user);
+/* Paused: fill isn't asked, the card plays out what is queued */
+void zdos_audio_pause(bool pause);
 /* Holds fill off while the program changes what it plays */
 void zdos_audio_lock(void);
 void zdos_audio_unlock(void);
