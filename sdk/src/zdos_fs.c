@@ -2279,6 +2279,17 @@ static int fseeko_unlocked(FILE *f, long long offset, int whence) {
         offset += pos;
         whence = SEEK_SET;
     }
+    // Into what the buffer holds (the file's rlen bytes before
+    // the descriptor's position): kept, only rpos moves
+    if (whence == SEEK_SET && f->wlen == 0 && f->rlen > 0) {
+        off_t end = lseek(f->fd, 0, SEEK_CUR);
+        if (end >= 0 && offset >= (long long)end - (long long)f->rlen && offset <= (long long)end) {
+            f->rpos = (size_t)(offset - ((long long)end - (long long)f->rlen));
+            f->ungot = -1;
+            f->flags &= ~STREAM_EOF;
+            return 0;
+        }
+    }
     if (f->wlen > 0 && stream_flush_write(f) != 0) {
         return -1;
     }
@@ -3447,12 +3458,15 @@ int msync(void *addr, size_t length, int flags) {
     return mmap_write_back(r, lo, lo + length);
 }
 
+// Pages aren't protected one by one: any of the program's memory
+// (malloc's too, as JIT code caches use it), page-aligned, is fine
 int mprotect(void *addr, size_t length, int prot) {
     (void)prot;
+    (void)length;
     if (((uintptr_t)addr & (MMAP_PAGE - 1)) != 0) {
         return fail(EINVAL);
     }
-    return mmap_find(addr, length) != NULL ? 0 : fail(ENOMEM);
+    return 0;
 }
 
 int madvise(void *addr, size_t length, int advice) {

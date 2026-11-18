@@ -848,9 +848,39 @@ const char *inet_ntop(int family, const void *addr, char *out, socklen_t size) {
 
 /* netdb.h: NUMBERS, LOCALHOST, THEN ZDOS (HOSTS.CFG, DNS) */
 
+// The machine's own name (gethostname): every started interface's
+// address, the default route's first (as Windows and
+// nss-myhostname give them), else 127.0.0.1; 0 if not that name
+#define OWN_MAX 8
+static int own_name4(const char *name, struct in_addr *out, int max) {
+    char host[256];
+    if (gethostname(host, sizeof(host)) != 0 || strcasecmp(name, host) != 0) {
+        return 0;
+    }
+    int n = 0;
+    zdos_net_info info;
+    for (int pass = 0; pass < 2; pass++) {
+        for (uint32_t i = 0; zdos != NULL && zdos->net->interface != NULL && zdos->net->interface(i, &info); i++) {
+            int first = (info.flags & ZDOS_NET_DEFAULT_ROUTE) != 0;
+            if (!(info.flags & ZDOS_NET_STARTED) || first != (pass == 0) || n == max ||
+                !(info.address[0] | info.address[1] | info.address[2] | info.address[3])) {
+                continue;
+            }
+            memcpy(&out[n++].s_addr, info.address, 4);
+        }
+    }
+    if (n == 0) {
+        out[n++].s_addr = htonl(INADDR_LOOPBACK);
+    }
+    return n;
+}
+
 // A name's IPv4 address through ZDOS; false if it has none
 static bool resolve4(const char *name, struct in_addr *out) {
     uint8_t a[4];
+    if (own_name4(name, out, 1) > 0) {
+        return true;
+    }
     if (zdos == NULL || !zdos->net->resolve(name, strlen(name), a)) {
         return false;
     }
@@ -977,19 +1007,25 @@ int getnameinfo(const struct sockaddr *addr, socklen_t len, char *host, socklen_
 }
 
 struct hostent *gethostbyname(const char *name) {
-    static struct in_addr addr;
-    static char *addrs[2];
+    static struct in_addr addr[OWN_MAX];
+    static char *addrs[OWN_MAX + 1];
     static struct hostent h;
     static char *no_aliases[1];
     static char host[256];
+    int n = 1;
     if (strcmp(name, "localhost") == 0) {
-        addr.s_addr = htonl(INADDR_LOOPBACK);
-    } else if (!inet_aton(name, &addr) && !resolve4(name, &addr)) {
-        return NULL;
+        addr[0].s_addr = htonl(INADDR_LOOPBACK);
+    } else if ((n = own_name4(name, addr, OWN_MAX)) == 0) {
+        n = 1;
+        if (!inet_aton(name, &addr[0]) && !resolve4(name, &addr[0])) {
+            return NULL;
+        }
     }
     snprintf(host, sizeof(host), "%s", name);
-    addrs[0] = (char *)&addr;
-    addrs[1] = NULL;
+    for (int i = 0; i < n; i++) {
+        addrs[i] = (char *)&addr[i];
+    }
+    addrs[n] = NULL;
     h.h_name = host;
     h.h_aliases = no_aliases;
     h.h_addrtype = AF_INET;

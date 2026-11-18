@@ -560,6 +560,10 @@ int execvp(const char *file, char *const argv[]) {
     return exec_common(file, argv, NULL, true);
 }
 
+int execvpe(const char *file, char *const argv[], char *const envp[]) {
+    return exec_common(file, argv, envp, true);
+}
+
 // The arguments of execl and its kin as an argv (at most 64)
 #define MAX_EXEC_ARGS 64
 static void collect_args(char **argv, const char *first, va_list ap) {
