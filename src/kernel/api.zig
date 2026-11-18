@@ -3209,23 +3209,119 @@ fn dupHandle(handle: i32) Error!i32 {
     return @intCast(slot);
 }
 
+// Waits as MINIX's select and SerenityOS's poll do: a watch on
+// each handle's object (events.zig), then one sleep until one of
+// them notifies, a signal, Ctrl+C or the timeout, nothing looked
+// at again on a timer. Without a watch (the table full, no task
+// switching) each millisecond, as before.
 fn poll(fds: [*]abi.PollFd, count: u32, timeout_ms: i32) callconv(abi.cc) i32 {
     const list = fds[0..count];
-    const began = platform.clock.millis();
+    var ready = lookAt(list);
+    if (ready > 0 or timeout_ms == 0) return polled(ready);
+    const until: ?u64 = if (timeout_ms > 0) platform.clock.millis() + @as(u64, @intCast(timeout_ms)) else null;
+    if (!tasks.active()) return pollEachMs(list, until);
+
+    const slot = (@intFromPtr(tasks.currentTask()) - @intFromPtr(&tasks.tasks)) / @sizeOf(tasks.Task);
+    const q = &poll_queues[slot];
+    if (poll_left[slot]) queues.pollUnwatchAll(q); // its last poller ended inside
+    poll_left[slot] = true;
+    var n: usize = 0; // watches made
+    var each_ms = false; // an object without one
+    var keys = prog().ctrl_c == .ends; // Ctrl+C ends the wait too
+    for (list) |*f| {
+        var obj: ?*const anyopaque = null;
+        if (pollObject(f.handle, &obj) == .keys) keys = true;
+        const o = obj orelse continue;
+        if (n < max_poll_watches and queues.pollWatch(q, o) != null) n += 1 else each_ms = true;
+    }
+    if (keys) {
+        if (n < max_poll_watches and queues.pollWatch(q, con.inputObject()) != null) n += 1 else each_ms = true;
+    }
+    ready = pollWait(list, q, until, each_ms, keys);
+    queues.pollUnwatchAll(q);
+    poll_left[slot] = false;
+    if (ready == poll_ctrl_c) stopByCtrlC();
+    if (ready < 0) return failInt(.interrupted);
+    return polled(ready);
+}
+
+const max_poll_watches = 128;
+var poll_queues: [tasks.max_tasks]queues.Queue = @splat(.{});
+var poll_left: [tasks.max_tasks]bool = @splat(false); // watches a poll may have left
+const poll_ctrl_c: i32 = -2;
+
+// The waiting: ready handles, -1 for a signal,
+// poll_ctrl_c (the watches go first)
+fn pollWait(list: []abi.PollFd, q: *queues.Queue, until: ?u64, each_ms: bool, keys: bool) i32 {
     while (true) {
-        var ready: i32 = 0;
-        for (list) |*f| {
-            f.revents = readiness(f.handle, f.events);
-            if (f.revents != 0) ready += 1;
+        const seen = q.news.load(.acquire);
+        if (prog().ctrl_c == .ends and con.breakRequested()) return poll_ctrl_c;
+        const ready = lookAt(list);
+        if (ready > 0) return ready;
+        var ms: ?u32 = null;
+        if (until) |e| {
+            const now = platform.clock.millis();
+            if (now >= e) return 0;
+            ms = @intCast(@min(e - now, std.math.maxInt(u32)));
         }
-        if (ready > 0 or timeout_ms == 0 or (timeout_ms > 0 and platform.clock.millis() - began >= @as(u64, @intCast(timeout_ms)))) {
-            prog().last_error = .none;
-            return ready;
-        }
-        // Looked at again each millisecond (pipes, keys and files have
-        // no common way to wake a waiter)
+        const look: ?u32 = if (each_ms) 1 else if (keys) con.inputLookMs() else null;
+        if (look) |l| ms = if (ms) |m| @min(m, l) else l;
+        const asked = if (keys) con.inputWanted() else false;
+        const ok = tasks.waitObjectSince(q, ms, &q.news, seen);
+        con.inputUnwanted(asked);
+        if (!ok) return -1;
+    }
+}
+
+// Without task switching: looked at each millisecond
+fn pollEachMs(list: []abi.PollFd, until: ?u64) i32 {
+    while (true) {
+        checkCtrlC();
+        const ready = lookAt(list);
+        if (ready > 0) return polled(ready);
+        if (until) |e| if (platform.clock.millis() >= e) return polled(0);
         if (!tasks.sleep(1)) return failInt(.interrupted);
     }
+}
+
+fn polled(ready: i32) i32 {
+    prog().last_error = .none;
+    return ready;
+}
+
+fn lookAt(list: []abi.PollFd) i32 {
+    var ready: i32 = 0;
+    for (list) |*f| {
+        f.revents = readiness(f.handle, f.events);
+        if (f.revents != 0) ready += 1;
+    }
+    return ready;
+}
+
+// What notifies when a handle's readiness changes, into obj;
+// keys: the console's input. Handles always ready (files) or
+// never (queues) need nothing.
+const PollKind = enum { object, keys };
+
+fn pollObject(handle: i32, obj: *?*const anyopaque) PollKind {
+    if (handle == abi.PollFd.stdin_handle) {
+        switch (tasks.world().input) {
+            .none => return .keys,
+            .channel => |c| obj.* = c,
+            else => {},
+        }
+        return .object;
+    }
+    const o = byHandle(handle) catch return .object;
+    switch (o) {
+        .socket => |sock| obj.* = sock.z,
+        .reader, .writer => |c| obj.* = c,
+        .counter => |c| obj.* = c,
+        .term => |t| obj.* = t.output,
+        .tty => return .keys,
+        else => {},
+    }
+    return .object;
 }
 
 fn readiness(handle: i32, events: u16) u16 {

@@ -11,6 +11,7 @@ const tasks = @import("tasks.zig");
 const Term = @import("term.zig").Term;
 const scrollback = @import("scrollback.zig");
 const api = @import("api.zig");
+const events = @import("events.zig");
 
 pub const Key = platform.Key;
 pub const Position = platform.Position;
@@ -344,6 +345,39 @@ var key_waiters: u8 = 0;
 // task (UEFI); outside the scheduler
 fn keyArrived() void {
     tasks.wake(&key_waiters);
+    events.notify(&key_waiters); // waiting polls
+}
+
+// For poll (api.zig): what notifies when keys come for this
+// task (its remote console, else the keyboard)
+pub fn inputObject() *const anyopaque {
+    if (term()) |t| return t;
+    return &key_waiters;
+}
+
+// How long poll may wait before looking at the keys again,
+// null until they notify: for an escape sequence's end, keys
+// that wake nobody, UEFI's and polled keyboards' keys. Behind
+// the front none come (coming to the front notifies)
+pub fn inputLookMs() ?u32 {
+    if (term()) |t| return if (t.esc_since != 0) 20 else null;
+    if (tasks.active() and !tasks.foreground()) return null;
+    if (!input_wakes) return 1;
+    if (@hasDecl(platform.console, "inputPollMs")) return platform.console.inputPollMs();
+    if (@hasDecl(platform.console, "wantInput")) return 50;
+    return null;
+}
+
+// UEFI's idle task watches the key event only while asked:
+// true if asked now (inputUnwanted then)
+pub fn inputWanted() bool {
+    if (!@hasDecl(platform.console, "wantInput") or term() != null or !tasks.foreground()) return false;
+    platform.console.wantInput(true);
+    return true;
+}
+
+pub fn inputUnwanted(asked: bool) void {
+    if (@hasDecl(platform.console, "wantInput") and asked) platform.console.wantInput(false);
 }
 
 // At startup, once tasks run

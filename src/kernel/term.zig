@@ -7,6 +7,7 @@ const platform = @import("../platform.zig");
 const stdio = @import("stdio.zig");
 const tasks = @import("tasks.zig");
 const abi = @import("abi.zig");
+const events = @import("events.zig");
 
 const Key = platform.Key;
 const Scan = platform.Scan;
@@ -64,6 +65,7 @@ pub const Term = struct {
         @memcpy(self.in_buf[self.in_len..][0..n], data[0..n]);
         self.in_len += n;
         tasks.wake(self);
+        events.notify(self); // waiting polls
         return n;
     }
 
@@ -79,6 +81,7 @@ pub const Term = struct {
             self.hung_up = true;
             self.signalAll(abi.Signal.hup);
             tasks.wake(self);
+            events.notify(self);
         }
         self.output.closeReader();
         self.freeIfUnused();

@@ -221,6 +221,43 @@ pub fn change(q: *Queue, owner: *const anyopaque, handle: i32, obj: *const anyop
     }
 }
 
+// POLL'S WATCHES
+// A waiting poll is on each object it looks at (as MINIX's
+// select and SerenityOS's blockers): a watch of its task's
+// queue that nothing collects (the poll looks itself, api.zig).
+// No program handle: handleClosed leaves it. Kernel lock held.
+
+// A watch of q on obj; null with the table full
+pub fn pollWatch(q: *Queue, obj: *const anyopaque) ?u16 {
+    const w = for (&watches) |*w| {
+        if (w.obj == null) break w;
+    } else return null;
+    const i = indexOf(w);
+    w.* = .{ .queue = q, .owner = q, .handle = -1 };
+    const was = lock();
+    var at = &heads[bucketOf(obj)];
+    while (at.* != nil and at.* < i) at = &watches[at.*].next;
+    w.next = at.*;
+    at.* = i;
+    w.obj = obj;
+    if (i >= top) top = i + 1;
+    _ = active.fetchAdd(1, .release);
+    unlock();
+    interruptsBack(was);
+    return i;
+}
+
+pub fn pollUnwatch(i: u16) void {
+    if (watches[i].obj != null) drop(&watches[i]);
+}
+
+// A task that ended in its poll left watches of q
+pub fn pollUnwatchAll(q: *Queue) void {
+    for (watches[0..top]) |*w| {
+        if (w.obj != null and w.queue == q) drop(w);
+    }
+}
+
 // QueueBits that hold for a watched handle now; null if the
 // handle is gone or is another object now
 pub const Readiness = *const fn (handle: i32, obj: *const anyopaque) ?u32;
