@@ -42,7 +42,8 @@ bool zdos_display_open(int width, int height, int format);
 void zdos_display_palette(int first, int count, const uint8_t *rgb);
 /* Shows a picture: rows of pitch bytes (0: width times the pixel size) */
 void zdos_display_present(const void *pixels, int pitch);
-/* An arrow pointer drawn into each picture at x, y (the picture's pixels) */
+/* ZDOS's arrow pointer (as gfx.zig's) drawn into each picture at x, y
+   (the picture's pixels) */
 void zdos_display_cursor(int x, int y, bool shown);
 void zdos_display_get(zdos_display_info *info);
 /* Back to text (the program's end does it too) */

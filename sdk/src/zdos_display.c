@@ -13,11 +13,12 @@ static struct {
     bool on;
     int w, h, format;
     int out_w, out_h, kind, colors;
+    int screen_h;      /* the screen's height in output pixels: the pointer's choice */
     uint32_t *rgb;     /* OUT_RGB's picture */
     uint8_t *idx;      /* the others' */
     int *xmap;         /* each output column's source column */
     uint32_t pal[256]; /* INDEX8's palette, 0xRRGGBB */
-    uint8_t black, white;
+    uint8_t black, gray, white;
     bool cursor;
     int cx, cy;
 } d;
@@ -109,6 +110,16 @@ bool zdos_display_open(int width, int height, int format) {
     d.format = format;
     d.out_w = ow;
     d.out_h = oh;
+    // The screen in the picture's pixels. True color: the screen holds
+    // the picture scaled up by a whole number, or BIOS sets a VESA mode
+    // at least its size; in the VGA's modes the picture fills the mode:
+    if (d.kind == OUT_RGB) {
+        int kw = (int)s.width / ow, kh = (int)s.height / oh;
+        int k = kw < kh ? kw : kh;
+        d.screen_h = (int)s.height / (k > 1 ? k : 1);
+    } else {
+        d.screen_h = d.kind == OUT_VGA16 ? 480 : 200;
+    }
     if (d.kind == OUT_RGB) {
         d.rgb = malloc((size_t)ow * (size_t)oh * 4);
     } else {
@@ -157,14 +168,17 @@ void zdos_display_get(zdos_display_info *info) {
     info->colors = d.on ? d.colors : 0;
 }
 
-/* The palette entries nearest black and white, for the pointer */
+/* The palette entries nearest black, the pointer's gray and white */
 static void find_black_white(void) {
-    int best_b = 1 << 30, best_w = -1;
+    int best_b = 1 << 30, best_w = -1, best_g = 1 << 30;
     for (int i = 0; i < 256; i++) {
         uint32_t c = d.pal[i];
-        int sum = (int)((c >> 16) & 255) + (int)((c >> 8) & 255) + (int)(c & 255);
+        int r = (int)((c >> 16) & 255), g = (int)((c >> 8) & 255), b = (int)(c & 255);
+        int sum = r + g + b;
+        int dist = (r - 123) * (r - 123) + (g - 123) * (g - 123) + (b - 123) * (b - 123);
         if (sum < best_b) best_b = sum, d.black = (uint8_t)i;
         if (sum > best_w) best_w = sum, d.white = (uint8_t)i;
+        if (dist < best_g) best_g = dist, d.gray = (uint8_t)i;
     }
 }
 
@@ -214,25 +228,49 @@ static uint8_t to_index(uint32_t c, int x, int y) {
     return (uint8_t)(dither(r, 2, t) << 3 | dither(g, 4, t) << 1 | dither(b, 2, t));
 }
 
-/* The pointer: X its outline, o its inside */
+/* ZDOS's pointers, as apps/zdos/gfx.zig draws them (icons/cursor.png,
+   icons/cursorsm.png): ' ' transparent, '#' black, '+' gray, '.' white;
+   the tip, at the top left, is the point. The small one on screens of
+   fewer than 480 lines (in the picture's pixels). */
 static const char *const arrow[] = {
-    "X", "XX", "XoX", "XooX", "XoooX", "XooooX", "XoooooX", "XooooooX", "XoooooooX", "XooooooooX",
-    "XoooooXXXXX", "XooXooX", "XoX XooX", "XX  XooX", "X    XooX", "     XooX", "      XX",
+    ".                   ", "..                  ", "...                 ",
+    "....                ", ".....               ", "..+...              ",
+    "..#+...             ", "..##+...            ", "..###+...           ",
+    "..####+...          ", "..#####+...         ", "..######+...        ",
+    "..#######+...       ", "..########+...      ", "..#########+...     ",
+    "..##########+...    ", "..###########+...   ", "..############+...  ",
+    "..#############+... ", "..#######+..........", "..###.+###..        ",
+    "..##...###+..       ", "..#....+###..       ", "..... ..###+..      ",
+    "....  ..+###..      ", "...    ..###+.      ", "..     ..+###..     ",
+    ".       ..###+.     ", "        ..+##+..    ", "         .......    ",
+    "         ....       ", "         ..         ",
+};
+
+static const char *const small_arrow[] = {
+    ".         ", "..        ", ".+.       ", ".#+.      ", ".##+.     ",
+    ".###+.    ", ".####+.   ", ".#####+.  ", ".######+. ", ".#######..",
+    ".####+..  ", ".#.+#+.   ", ".. .##+.  ", ".  .+#+.  ", "    .#+.  ",
+    "     ..   ",
 };
 
 static void draw_cursor(void) {
     int ox = (int)((int64_t)d.cx * d.out_w / d.w), oy = (int)((int64_t)d.cy * d.out_h / d.h);
-    uint32_t dark = 0, light = 0xFFFFFF;
-    if (d.kind == OUT_PAL8) dark = d.black, light = d.white;
-    else if (d.kind == OUT_332) light = 255;
-    else if (d.kind == OUT_VGA16) light = 15;
-    for (int r = 0; r < (int)(sizeof(arrow) / sizeof(arrow[0])); r++) {
+    bool low_res = d.screen_h < 480; /* the screen's lines, not the picture's */
+    const char *const *shape = low_res ? small_arrow : arrow;
+    int rows = low_res ? (int)(sizeof(small_arrow) / sizeof(small_arrow[0])) : (int)(sizeof(arrow) / sizeof(arrow[0]));
+    /* 0xRRGGBB, or the output's indexes (16 colors: no gray, black) */
+    uint32_t black = 0, gray = 0x7B7B7B, white = 0xFFFFFF;
+    if (d.kind == OUT_PAL8) black = d.black, gray = d.gray, white = d.white;
+    else if (d.kind == OUT_332) black = 0, gray = 3 << 5 | 3 << 2 | 1, white = 255;
+    else if (d.kind == OUT_VGA16) black = 0, gray = 0, white = 15;
+    for (int r = 0; r < rows; r++) {
         int y = oy + r;
         if (y < 0 || y >= d.out_h) continue;
-        for (int c = 0; arrow[r][c] != '\0'; c++) {
+        for (int c = 0; shape[r][c] != '\0'; c++) {
             int x = ox + c;
-            if (x < 0 || x >= d.out_w || arrow[r][c] == ' ') continue;
-            uint32_t v = arrow[r][c] == 'X' ? dark : light;
+            char p = shape[r][c];
+            if (x < 0 || x >= d.out_w || p == ' ') continue;
+            uint32_t v = p == '#' ? black : p == '+' ? gray : white;
             if (d.rgb != NULL) d.rgb[(size_t)y * d.out_w + x] = v;
             else d.idx[(size_t)y * d.out_w + x] = (uint8_t)v;
         }
