@@ -58,6 +58,9 @@ extern const zdos_runtime *zdos_runtime_host; /* zdos_libc.c; NULL in programs *
 
 /* thread_local blocks (zdos_tls.c): a thread's own, made and set */
 void *zdos_tls_start(void);
+/* x86 (x87): rounding to double, as on the other CPUs (zdos_tls.c);
+   nothing elsewhere. zdos_tls_start calls it: start-up and new threads. */
+void zdos_fpu_double(void);
 void zdos_tls_free(void *tp);
 
 /* Futexes (zdos_libc.c): ZDOS's threads->futex_wait / futex_wake; on an

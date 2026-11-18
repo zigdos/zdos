@@ -9,6 +9,23 @@
 #include "zdos.h"
 #include "zdos_internal.h"
 
+/* Here, not with the x87 math (zdos_math_x87.c): every program calls
+ * it, and linking that file brought its rint, floor ... into programs
+ * with their own (MicroPython). */
+/* Every task starts with the x87 at extended precision: results kept
+ * in its 80-bit registers then differ from the same double in memory
+ * ((int)log(e^5) was 4: compiler-rt returns log unrounded, where C
+ * wants it rounded). At double precision a register holds what
+ * memory would, as on x86-64 and ARM64 and in ZDOS's Zig programs
+ * (fpuForZig sets the same word). float is unchanged; long double
+ * gets double's precision. A program may set the control word itself. */
+void zdos_fpu_double(void) {
+#if defined(__i386__)
+    unsigned short cw = 0x027f; /* all exceptions masked, double precision, to nearest */
+    __asm__ volatile("fldcw %0" : : "m"(cw));
+#endif
+}
+
 extern char __tdata_start[], __tdata_end[], __tbss_end[];
 
 #define TLS_ALIGN 64 /* the linker scripts' alignment of .tdata and .tbss */
@@ -53,8 +70,10 @@ void zdos_tls_free(void *tp) {
 #endif
 }
 
-/* The calling thread's block, made and set (start-up and new threads) */
+/* The calling thread's block, made and set (start-up and new threads),
+   and its x87 rounding to double */
 void *zdos_tls_start(void) {
+    zdos_fpu_double();
     void *tp = zdos_tls_create();
     if (tp != NULL) zdos->threads->set_thread_pointer((uintptr_t)tp);
     return tp;

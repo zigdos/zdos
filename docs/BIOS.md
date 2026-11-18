@@ -161,6 +161,6 @@ zig build-exe -target x86-freestanding -mcpu=i686 -O ReleaseSmall -fPIE \
 zig objcopy -O binary hello.elf HELLO.APP
 ```
 
-Zig's `@sin`, `@cos` ... need the x87 at double precision (no SSE here): `zdos.zig` sets it at a program's start and in `tlsStart`; a job on another core calls `zdos.fpuForZig()` first. C programs keep extended precision (`long double`).
+Zig's `@sin`, `@cos` ... need the x87 at double precision (no SSE here): `zdos.zig` sets it at a program's start and in `tlsStart`; a job on another core calls `zdos.fpuForZig()` first. C programs get the same: the SDK sets it at start-up and for each new thread (`long double` has double's precision).
 
 C, with the SDK's C library (a program with `main()`): `sdk/bin/zdos-cc --arch=x86 hello.c -o HELLO.APP`, see `sdk/README.md`. A 32-bit `.APP` (`ZAP3`) is refused by the 64-bit editions with "Not a ZDOS program", and the other way round.
