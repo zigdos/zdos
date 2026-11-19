@@ -14,6 +14,12 @@ FUNCS=$BUILD/webp.funcs
 sed -n 's/^X(\([^)]*\))$/\1/p' "$PORT/exports.def" >"$FUNCS"
 [ -s "$FUNCS" ] || die "exports.def has no functions"
 
+# The version, from src/dec/vp8i_dec.h:
+v() { sed -n "s/^#define DEC_$1_VERSION \([0-9]*\).*/\1/p" "$WEBP_SRC/src/dec/vp8i_dec.h"; }
+v1=$(v MAJ) v2=$(v MIN) v3=$(v REV)
+[ -n "$v1" ] && [ -n "$v2" ] && [ -n "$v3" ] || die "no version in $WEBP_SRC/src/dec/vp8i_dec.h"
+VERSION_FLAGS="-DZDOS_WEBP_MAJOR=$v1 -DZDOS_WEBP_MINOR=$v2 -DZDOS_WEBP_PATCH=$v3"
+
 for arch in $(arches "$@"); do
     select_arch "$arch"
     case $arch in
@@ -61,7 +67,7 @@ for arch in $(arches "$@"); do
     [ -z "$missing" ] || die "libwebp archives lack exports: $missing"
 
     echo "=== WEBP.ZDL for $arch ==="
-    $CC -O2 -I"$PORT" -c "$PORT/webp_zdl.c" -o "$obj/webp_zdl.o"
+    $CC -O2 $VERSION_FLAGS -I"$PORT" -c "$PORT/webp_zdl.c" -o "$obj/webp_zdl.o"
     (cd "$obj" && $CC -Wl,--start-group webp_zdl.o "$WEBP_ARCHIVE" \
         "$WEBP_MUX_ARCHIVE" "$SHARPYUV_ARCHIVE" -Wl,--end-group -lm \
         -Wl,--gc-sections -o WEBP.ZDL)
