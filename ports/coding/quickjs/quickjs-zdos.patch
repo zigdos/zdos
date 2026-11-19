@@ -1,0 +1,59 @@
+--- a/quickjs-libc.c
++++ b/quickjs-libc.c
+@@ -92,6 +92,9 @@
+ #include "cutils.h"
+ #include "list.h"
+ #include "quickjs-libc.h"
++#ifdef __zdos__
++#include "zdos_modules.h"
++#endif
+ 
+ #if JS_HAVE_THREADS
+ #include "quickjs-c-atomics.h"
+@@ -963,6 +966,11 @@
+ {
+     if (js__has_suffix(module_name, QJS_NATIVE_MODULE_SUFFIX))
+         return js_module_loader_so(ctx, module_name);
++#ifdef __zdos__
++    /* ZDOS: zdos:web's source is inside the program */
++    if (!strcmp(module_name, "zdos:web"))
++        return js_module_load(ctx, module_name, opaque, attributes, zdos_module_source);
++#endif
+     return js_module_load(ctx, module_name, opaque, attributes, js_load_file);
+ }
+ 
+@@ -3537,6 +3545,11 @@
+         errno = ENOENT;
+         return -1;
+     }
++#ifdef __zdos__
++    /* ZDOS: PATH is "C:\APPS;C:\GAMES", names have backslashes and
++       drives: the C library's own search */
++    return execvpe(filename, argv, envp);
++#endif
+     if (strchr(filename, '/'))
+         return execve(filename, argv, envp);
+ 
+--- a/qjs.c
++++ b/qjs.c
+@@ -35,6 +35,9 @@
+ #include "cutils.h"
+ #include "quickjs.h"
+ #include "quickjs-libc.h"
++#ifdef __zdos__
++#include "zdos_modules.h"
++#endif
+ 
+ #ifdef QJS_USE_MIMALLOC
+ #include <mimalloc.h>
+@@ -251,6 +254,10 @@
+     js_init_module_std(ctx, "qjs:std");
+     js_init_module_os(ctx, "qjs:os");
+     js_init_module_bjson(ctx, "qjs:bjson");
++#ifdef __zdos__
++    /* ZDOS: zdos:net, zdos:sqlite */
++    zdos_init_modules(ctx);
++#endif
+ 
+     JSValue global = JS_GetGlobalObject(ctx);
+     JS_SetPropertyFunctionList(ctx, global, global_obj, countof(global_obj));

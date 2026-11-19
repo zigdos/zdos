@@ -57,6 +57,7 @@ TESTS = [
     ("shells", "ash", "both", 900, "ash C:/SCRIPTS/demoa.sh"),
     ("shells", "batch", "both", 180, "COMMAND -c C:/SCRIPTS/DEMOB.CMD"),
     ("scripts", "lua", "both", 120, "lua C:/SCRIPTS/luademo.lua"),
+    ("scripts", "quickjs", "both", 120, "qjs C:/SCRIPTS/jsdemo.js"),
     ("scripts", "gcstress", "once", 600, "micropython C:/SCRIPTS/gcstress.py"),
     ("scripts", "stest", "both", 900, "ash C:/SCRIPTS/stest.sh"),
     ("apps", "archives", "both", 300, "ash C:/SCRIPTS/archives.sh"),

@@ -44,6 +44,7 @@ The applications that come with ZDOS, in `C:\APPS`, and the scripts in `C:\SCRIP
  - [demoa.sh](#demoash)  
  - [DEMOB.CMD](#demobcmd)  
  - [gcstress.py](#gcstresspy)  
+ - [jsdemo.js](#jsdemojs)  
  - [luademo.lua](#luademolua)  
  - [realtime.sh](#realtimesh)  
  - [stest.sh](#stestsh)  
@@ -182,6 +183,10 @@ A self test of the batch interpreter: prints `[OK]` or `[FAIL]` per test, the ex
 ### gcstress.py
 
 A MicroPython garbage collector stress test (`MICROPYTHON C:\SCRIPTS\GCSTRESS.PY [rounds]`), see [its README](../ports/coding/micropython/README.md).
+
+### jsdemo.js
+
+Checks the QuickJS port (`qjs C:\SCRIPTS\JSDEMO.JS`), see [its README](../ports/coding/quickjs/README.md).
 
 ### luademo.lua
 

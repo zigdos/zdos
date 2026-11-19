@@ -73,7 +73,8 @@
 - [ ] C:`setjmp` saving FPU control state; file creation and access times.
 - [ ] C++: `std::filesystem` with ZDOS paths, a tz database, smaller programs (`iostream`).
 - [ ] Console in event queues and `socketpair` (Rust terminal programs) - under question.
-- [ ] QuickJS-ng with web server and database clients (SQL, Mongo, Redis).
+- [x] QuickJS-ng with web server and SQLite.
+- [ ] QuickJS-ng: database clients (Mongo, Redis).
 - [ ] File manager: terminal and GUI.
 - [ ] MPlayer or other player.
 - [ ] Graphical text editors or word processors.
