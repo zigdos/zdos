@@ -1,10 +1,12 @@
 /*
   Simple DirectMedia Layer: the ZDOS audio backend, on the API's group sound
   (a sound card's driver, HDA.SYS ...). SDL's audio thread mixes into a
-  buffer and writes it with sound->write, then waits until at most one such
-  buffer is queued: the card's queue holds about a third of a second, and
-  players (ffplay) take SDL's latency to be about two buffers. 8-bit unsigned
-  or 16-bit signed, mono or stereo, 8000-192000 Hz; SDL converts the rest.
+  buffer and writes it with sound->write, then sleeps to its next period
+  (a buffer's time, absolute deadlines, as WASAPI's events), keeping the
+  card's queue TARGET deep, as the SDK's audio does. Uneven
+  reads by the card (QEMU's AC'97) and late callbacks (a player decoding)
+  stay in that queue. 8-bit unsigned or 16-bit signed, mono or stereo,
+  8000-192000 Hz; SDL converts the rest.
 
   This software is provided 'as-is', under the zlib license (LICENSE.txt in
   SDL's sources).
@@ -20,11 +22,21 @@
 
 #include "zdos.h"
 
+/* The queue kept: 2 buffers (what players such as ffplay take SDL's
+   latency to be), at least TARGET_MS */
+#define TARGET_BUFFERS 2
+#define TARGET_MS 60
+
 struct SDL_PrivateAudioData
 {
     int handle;
     Uint8 *mixbuf;
+    Uint64 period; /* nanoseconds */
+    Uint64 next;   /* the next period's deadline */
+    size_t target; /* bytes queued at the card */
 };
+
+static void ZDOSAUDIO_PlayDevice(SDL_AudioDevice *_this);
 
 static int ZDOSAUDIO_OpenDevice(SDL_AudioDevice *_this, const char *devname)
 {
@@ -61,6 +73,18 @@ static int ZDOSAUDIO_OpenDevice(SDL_AudioDevice *_this, const char *devname)
         return SDL_OutOfMemory();
     }
     SDL_memset(h->mixbuf, _this->spec.silence, _this->spec.size);
+    h->period = (Uint64)_this->spec.samples * 1000000000u / (Uint64)_this->spec.freq;
+    {
+        const size_t frame = (size_t)_this->spec.channels * (size_t)(bits / 8);
+        const size_t floor = (size_t)_this->spec.freq * TARGET_MS / 1000 * frame;
+        const size_t buffers = (size_t)TARGET_BUFFERS * _this->spec.size;
+        h->target = buffers > floor ? buffers : floor;
+    }
+    /* Silence to TARGET: the queue the periods then keep */
+    while (SDL_AtomicGet(&_this->enabled) && zdos->sound->queued(h->handle) < h->target) {
+        ZDOSAUDIO_PlayDevice(_this); /* a failed write disables the device */
+    }
+    h->next = zdos->time->nanos();
     return 0;
 }
 
@@ -79,15 +103,37 @@ static void ZDOSAUDIO_PlayDevice(SDL_AudioDevice *_this)
     }
 }
 
+static SDL_bool ZDOSAUDIO_Running(SDL_AudioDevice *_this)
+{
+    return SDL_AtomicGet(&_this->enabled) && !SDL_AtomicGet(&_this->shutdown);
+}
+
 static void ZDOSAUDIO_WaitDevice(SDL_AudioDevice *_this)
 {
     struct SDL_PrivateAudioData *h = _this->hidden;
-    const Uint32 start = SDL_GetTicks();
+    int extra;
 
-    /* a card that stops playing: no longer than the queue lasts */
-    while (SDL_AtomicGet(&_this->enabled) && !SDL_AtomicGet(&_this->shutdown) &&
-           zdos->sound->queued(h->handle) > _this->spec.size && SDL_GetTicks() - start < 500) {
-        SDL_Delay(1);
+    /* A period at a time; a buffer is written after one unless the
+       card's queue is deep already (its clock slower than ours). A card
+       that stops playing: no longer than 8 periods */
+    for (extra = 0; ZDOSAUDIO_Running(_this) && extra < 8; extra++) {
+        const size_t q = zdos->sound->queued(h->handle);
+        Uint64 now;
+
+        /* Below TARGET (the card's clock faster than ours): the next
+           period an eighth sooner, so the queue stays at TARGET; below
+           half (a stall), twice the pace, never in a burst */
+        h->next += q < h->target / 2 ? h->period / 2 : q < h->target ? h->period - h->period / 8 : h->period;
+        now = zdos->time->nanos();
+        if (h->next + h->period < now) {
+            h->next = now; /* late by more than a period: on from now */
+        }
+        while (ZDOSAUDIO_Running(_this) && zdos->time->nanos() < h->next) {
+            zdos->time->nap_until(h->next);
+        }
+        if (zdos->sound->queued(h->handle) < h->target + _this->spec.size) {
+            return;
+        }
     }
 }
 

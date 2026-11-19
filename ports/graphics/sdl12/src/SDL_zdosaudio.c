@@ -102,6 +102,7 @@ int SDL_OpenAudio(SDL_AudioSpec *desired, SDL_AudioSpec *obtained)
             au.spec.freq = rates[i];
         }
         if (zdos_audio_start((uint32_t)au.spec.freq, s.channels, bits, s.samples, fill, NULL)) {
+            zdos_audio_pause(true);
             au.open = 1;
             if (obtained) *obtained = au.spec;
             return 0;
@@ -122,6 +123,7 @@ void SDL_PauseAudio(int pause_on)
     zdos_audio_lock();
     au.paused = pause_on != 0;
     zdos_audio_unlock();
+    zdos_audio_pause(pause_on != 0);
 }
 
 void SDL_LockAudio(void) { zdos_audio_lock(); }

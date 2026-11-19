@@ -7,6 +7,13 @@
 #include "SDL_syswm.h"
 #include "SDL_vulkan.h"
 
+/* The version for ZDOS: SDL_version.h's, expanded before
+ * ZDOS_FILE_VERSION's # */
+#include "zdos.h"
+#define ZDL_VERSION(a, b, c) ZDOS_FILE_VERSION(a, b, c, 0)
+#define ZDL_VERSION_OF(a, b, c) ZDL_VERSION(a, b, c)
+ZDL_VERSION_OF(SDL_MAJOR_VERSION, SDL_MINOR_VERSION, SDL_PATCHLEVEL);
+
 #define SDL_DYNAPI_PROC(rc, fn, params, args, ret) +1
 enum { zdos_sdl2_count = 0
 #include "dynapi/SDL_dynapi_procs.h"
