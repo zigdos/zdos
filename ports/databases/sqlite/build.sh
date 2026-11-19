@@ -54,13 +54,17 @@ LIB_FLAGS="-DSQLITE_OS_OTHER=1 -DSQLITE_THREADSAFE=0 -DSQLITE_OMIT_WAL=1 -DSQLIT
 # The shell: no readline, no zlib, no child processes:
 SHELL_FLAGS="-DSQLITE_OMIT_LOAD_EXTENSION=1 -DSQLITE_NOHAVE_SYSTEM=1 -DHAVE_READLINE=0 -DHAVE_EDITLINE=0"
 
+# The version, from VERSION:
+IFS=. read -r v1 v2 v3 _ <"$SQLITE_SRC/VERSION" || die "no version in $SQLITE_SRC/VERSION"
+VERSION_FLAGS="-DZDOS_SQLITE_MAJOR=$((10#$v1)) -DZDOS_SQLITE_MINOR=$((10#${v2:-0})) -DZDOS_SQLITE_PATCH=$((10#${v3:-0}))"
+
 for arch in $(arches "$@"); do
     select_arch "$arch"
     obj=$BUILD/$arch
     mkdir -p "$obj"
     echo "=== SQLITE.ZDL for $arch ==="
     $STUBS SQLITE "$FUNCS" "$obj/libsqlite3.a"
-    $CC -Os $LIB_FLAGS -I"$AMALG" -I"$PORT" -w -c "$PORT/sqlite_zdl.c" -o "$obj/sqlite_zdl.o"
+    $CC -Os $LIB_FLAGS $VERSION_FLAGS -I"$AMALG" -I"$PORT" -w -c "$PORT/sqlite_zdl.c" -o "$obj/sqlite_zdl.o"
     $CC "$obj/sqlite_zdl.o" -o "$obj/SQLITE.ZDL"
     echo "=== SQLITE3.APP, SQLTEST.APP for $arch ==="
     $CC -Os $SHELL_FLAGS -I"$AMALG" -w "$AMALG/shell.c" "$obj/libsqlite3.a" -o "$obj/SQLITE3.APP"

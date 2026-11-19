@@ -7,6 +7,13 @@
 #include "sqlite3.c"
 #include "os_zdos.c"
 
+/* The version for ZDOS: VERSION's (build.sh), expanded before
+ * ZDOS_FILE_VERSION's # */
+#include "zdos.h"
+#define ZDL_VERSION(a, b, c) ZDOS_FILE_VERSION(a, b, c, 0)
+#define ZDL_VERSION_OF(a, b, c) ZDL_VERSION(a, b, c)
+ZDL_VERSION_OF(ZDOS_SQLITE_MAJOR, ZDOS_SQLITE_MINOR, ZDOS_SQLITE_PATCH);
+
 #define X(f) +1
 enum { zdos_sqlite_extras = 0
 #include "extras.def"

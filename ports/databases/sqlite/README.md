@@ -8,7 +8,7 @@ ports/databases/sqlite/build.sh x86_64      # one or more: x86, x86_64, arm64
 zig build                                   # puts them onto drive C:
 ```
 
-Sources: SQLite's amalgamation (`sqlite3.c`, `sqlite3.h`, `sqlite3ext.h`, `shell.c`, from sqlite.org's download page) in `$ZDOS_PORTS_SRC/sqlite-amalgamation` (`../sqlite-amalgamation` when that variable is unset; `SQLITE_AMALGAMATION=...`). Without it, SQLite's own tree in `$ZDOS_PORTS_SRC/sqlite-src` (`SQLITE_SRC=...`): the amalgamation is then made from it by SQLite's `configure` and `make` (which needs Tcl) in `build/sqlite/amalgamation`. Objects: `build/sqlite/<arch>/`; the sources are only read.
+Sources: SQLite's amalgamation (`sqlite3.c`, `sqlite3.h`, `sqlite3ext.h`, `shell.c`, from sqlite.org's download page) in `$ZDOS_PORTS_SRC/sqlite-amalgamation` (`../sqlite-amalgamation` when that variable is unset; `SQLITE_AMALGAMATION=...`). Without it, SQLite's own tree in `$ZDOS_PORTS_SRC/sqlite-src` (`SQLITE_SRC=...`): the amalgamation is then made from it by SQLite's `configure` and `make` (which needs Tcl) in `build/sqlite/amalgamation`. Objects: `build/sqlite/<arch>/`; the sources are only read. The version for ZDOS is taken from `VERSION`.
 
 ## How it is made
 
@@ -27,7 +27,7 @@ Not reachable through the stubs: SQLite's variables (`sqlite3_version`, `sqlite3
 
 ## Limits
 
-- **Locks:** connections of one program to one file lock each other as SQLite expects; two programs don't see each other's locks, so a database file is for one program at a time.
+- **Locks:** ZDOS's file locks (`files->lock`) on the bytes SQLite's Windows layer locks, so connections in one program and in several lock each other as SQLite expects. On a ZDOS without them (0.2) there are none.
 - Times come from ZDOS's clock; randomness (temporary names, `random()`) comes from ZDOS's random numbers (`getrandom`).
 
 ## Tests

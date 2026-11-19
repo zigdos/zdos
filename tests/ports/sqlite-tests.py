@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 # SQLite on ZDOS: SQLTEST and the sqlite3 shell on SQLDISK (FAT16) and
-# SQLEXT (ext2), then SQLTEST CRASH with the power pulled mid-commit,
-# SQLTEST CHECK after a boot; this computer's SQLite checks too.
+# SQLEXT (ext2), then SQLTEST CRASH with the power pulled mid-commit;
+# after it CHKEXT2 -F on SQLEXT, a restart and SQLTEST CHECK. The
+# host's SQLite checks the databases too.
 #   sqlite-tests.py [EDITION...]   default from ZDOS_EDITION /
 #   ZDOS_ARCH (tests/common.py), metal x86_64:
 #   ZDOS_EDITION=uefi ZDOS_ARCH=x86_64 python3 tests/ports/sqlite-tests.py
 import os
+import re
 import shutil
 import sqlite3
 import subprocess
@@ -134,7 +136,27 @@ def run_edition(edition):
              + [("shot", "crash", "the moment the power goes")])
     common.run_qemu(qemu(edition, d, sock, system, fat, ext), steps, d, sock, boot_wait=boot)
 
-    # Power back:
+    # The drives' letters, from the startup list:
+    serial = os.path.join(d, "serial.txt")
+    shutil.copyfile(serial, os.path.join(d, "serial-crash.txt"))
+    letters = drive_letters(serial)
+    fat_at, ext_at = letters.get("SQLDISK", "D"), letters.get("SQLEXT", "E")
+
+    # Power back: an ext2 drive cut mid-change is read only until
+    # CHKEXT2 -F and a restart, as the startup list says. Its
+    # questions: fix (Y), restart now (N); a clean drive asks none:
+    steps = (common.command(f"CHKEXT2 {ext_at}: -F > {fat_at}:\\CHKEXT2.TXT", 10)
+             + common.answer("Y", 20) + common.answer("N", 3)
+             + [("until", lambda: bool(mread(fat, "CHKEXT2.TXT")), 60), ("wait", 2)]
+             + common.command("SHUTDOWN", 15))
+    try:
+        common.run_qemu(qemu(edition, d, sock, system, fat, ext), steps, d, sock, boot_wait=boot)
+    except BrokenPipeError:
+        pass  # SHUTDOWN ended QEMU before its monitor was told to quit
+    shutil.copyfile(serial, os.path.join(d, "serial-repair.txt"))
+    cut_mid_change = f"Drive {ext_at}: unfinished change" in open(serial, errors="replace").read()
+
+    # After the restart:
     steps = (common.command("SQLTEST CHECK", 5)
              + [("until", has("CHECK.LOG", b"# SQLTEST:"), 300), ("wait", 2),
                 ("shot", "check", "SQLTEST CHECK after the power failure")]
@@ -143,7 +165,17 @@ def run_edition(edition):
         common.run_qemu(qemu(edition, d, sock, system, fat, ext), steps, d, sock, boot_wait=boot)
     except BrokenPipeError:
         pass  # SHUTDOWN ended QEMU before its monitor was told to quit
-    return check(edition, d, fat, ext, time.time() - began)
+    return check(edition, d, fat, ext, time.time() - began, cut_mid_change)
+
+
+def drive_letters(serial):
+    # "  E:  SQLEXT      ext2 ...": label -> letter
+    found = {}
+    for line in open(serial, errors="replace"):
+        m = re.match(r"\s+([A-Z]):\s+(SQLDISK|SQLEXT)\s", line)
+        if m:
+            found[m.group(2)] = m.group(1)
+    return found
 
 
 def tap(results, prefix, text):
@@ -161,13 +193,13 @@ def host_check(path):
         return str(e), None
 
 
-def check(edition, d, fat, ext, seconds):
+def check(edition, d, fat, ext, seconds, cut_mid_change):
     results = []
 
     def result(name, ok, detail=""):
         results.append((name, ok, detail))
 
-    for name in ("SQLTEST.LOG", "CHECK.LOG", "SHELL1.TXT", "SHELL2.TXT"):
+    for name in ("SQLTEST.LOG", "CHECK.LOG", "SHELL1.TXT", "SHELL2.TXT", "CHKEXT2.TXT"):
         with open(os.path.join(d, name), "wb") as f:
             f.write(mread(fat, name) or b"")
     log = open(os.path.join(d, "SQLTEST.LOG"), errors="replace").read()
@@ -178,6 +210,9 @@ def check(edition, d, fat, ext, seconds):
     shell2 = open(os.path.join(d, "SHELL2.TXT"), errors="replace").read()
     missing = [w for w in SHELL_WANT if w not in shell2]
     result("sqlite3 shell: a script from stdin (.tables, SELECT)", not missing, "missing: " + ", ".join(missing))
+    chk = open(os.path.join(d, "CHKEXT2.TXT"), errors="replace").read().strip()
+    result("SQLEXT checked after the power failure (CHKEXT2 -F)", bool(chk),
+           ("it was cut mid-change: " if cut_mid_change else "it was clean: ") + (chk.splitlines()[-1] if chk else "no output"))
     check_log = open(os.path.join(d, "CHECK.LOG"), errors="replace").read()
     result("SQLTEST CHECK finished", "# SQLTEST:" in check_log)
     tap(results, "after the power failure: ", check_log)

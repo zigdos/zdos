@@ -1,8 +1,7 @@
 /* SQLite's file layer (VFS "zdos") on ZDOS's file calls, for a build with
- * SQLITE_OS_OTHER=1. Locks are kept per program (connections of one program
- * to one file see each other's); programs don't see each other's, so one
- * database file is for one program at a time. No WAL (no shared memory),
- * no loadable extensions. */
+ * SQLITE_OS_OTHER=1. Locks are ZDOS's (files->lock), on os_win.c's bytes.
+ * They are each handle's own, so connections in one program and in others
+ * see each other's. No WAL (no shared memory), no loadable extensions. */
 #include <string.h>
 #include <sys/random.h>
 #include <sys/time.h>
@@ -12,54 +11,14 @@
 
 #define ZDOS_MAX_PATHNAME 512
 
-/* LOCKS, PER PATH, FOR THIS PROGRAM'S CONNECTIONS */
-
-typedef struct ZdosLock ZdosLock;
-struct ZdosLock {
-    ZdosLock *next;
-    int refs;    /* open files of this path */
-    int shared;  /* files holding SHARED or more */
-    int level;   /* the strongest lock a file holds: RESERVED, PENDING, EXCLUSIVE */
-    char path[ZDOS_MAX_PATHNAME];
-};
-
-static ZdosLock *zdos_locks;
-
-static ZdosLock *lock_for(const char *path) {
-    ZdosLock *l;
-    for (l = zdos_locks; l; l = l->next) {
-        if (sqlite3_stricmp(l->path, path) == 0) {
-            l->refs++;
-            return l;
-        }
-    }
-    l = sqlite3_malloc(sizeof *l);
-    if (l == NULL) return NULL;
-    memset(l, 0, sizeof *l);
-    sqlite3_snprintf(sizeof l->path, l->path, "%s", path);
-    l->refs = 1;
-    l->next = zdos_locks;
-    zdos_locks = l;
-    return l;
-}
-
-static void lock_release(ZdosLock *l) {
-    if (l == NULL || --l->refs > 0) return;
-    ZdosLock **p;
-    for (p = &zdos_locks; *p; p = &(*p)->next) {
-        if (*p == l) {
-            *p = l->next;
-            break;
-        }
-    }
-    sqlite3_free(l);
-}
+enum { HELD_PENDING = 1, HELD_RESERVED = 2 };
 
 typedef struct {
     sqlite3_file base;
     int32_t handle;
     int level;        /* this file's lock */
-    ZdosLock *lock;   /* NULL: a file without locks (journals, temporary files) */
+    int held;         /* PENDING, RESERVED: HELD_* */
+    bool locks;       /* the main database; journals, temporary files have none */
     char *delete_on_close;
 } ZdosFile;
 
@@ -81,7 +40,6 @@ static int zdos_close(sqlite3_file *id) {
         zdos->files->delete_file(f->delete_on_close, strlen(f->delete_on_close));
         sqlite3_free(f->delete_on_close);
     }
-    lock_release(f->lock);
     return SQLITE_OK;
 }
 
@@ -155,57 +113,94 @@ static int zdos_file_size(sqlite3_file *id, sqlite3_int64 *out) {
     return SQLITE_OK;
 }
 
+/* LOCKS */
+
+/* n bytes at off, failing at once if another handle's are in the way; a ZDOS
+ * without locks (NOT_SUPPORTED) grants every one */
+static bool take(ZdosFile *f, uint64_t off, uint64_t n, bool exclusive) {
+    if (zdos->files->lock(f->handle, off, n, exclusive ? ZDOS_LOCK_EXCLUSIVE : 0, 0)) return true;
+    return zdos->programs->last_error() == ZDOS_ERROR_NOT_SUPPORTED;
+}
+
+static void drop(ZdosFile *f, uint64_t off, uint64_t n) {
+    zdos->files->unlock(f->handle, off, n);
+}
+
+static int refused(void) {
+    return zdos->programs->last_error() == ZDOS_ERROR_WOULD_BLOCK ? SQLITE_BUSY : SQLITE_IOERR_LOCK;
+}
+
 /* SQLite asks for SHARED, RESERVED and EXCLUSIVE (through PENDING), as
- * os_unix.c's unixLock grants them */
+ * os_win.c grants them:
+ * - SHARED, a shared lock on the readers' range under a shared PENDING
+ *   (a writer's PENDING keeps new readers out);
+ * - RESERVED, its byte;
+ * - EXCLUSIVE, PENDING and then the readers' range converted. */
 static int zdos_lock(sqlite3_file *id, int level) {
     ZdosFile *f = (ZdosFile *)id;
-    ZdosLock *l = f->lock;
     if (f->level >= level) return SQLITE_OK;
-    if (l == NULL) {
+    if (!f->locks) {
         f->level = level;
         return SQLITE_OK;
     }
-    /* Another file holds PENDING or more, or RESERVED while we want more */
-    if (f->level != l->level && (l->level >= SQLITE_LOCK_PENDING || level > SQLITE_LOCK_SHARED)) {
-        return SQLITE_BUSY;
-    }
     if (level == SQLITE_LOCK_SHARED) {
-        if (l->level < SQLITE_LOCK_SHARED) l->level = SQLITE_LOCK_SHARED;
-        l->shared++;
-        f->level = SQLITE_LOCK_SHARED;
-        return SQLITE_OK;
+        if (!take(f, PENDING_BYTE, 1, false)) return refused();
+        bool ok = take(f, SHARED_FIRST, SHARED_SIZE, false);
+        int rc = ok ? SQLITE_OK : refused();
+        drop(f, PENDING_BYTE, 1);
+        if (ok) f->level = SQLITE_LOCK_SHARED;
+        return rc;
     }
     if (level == SQLITE_LOCK_RESERVED) {
-        l->level = f->level = SQLITE_LOCK_RESERVED;
+        if (!take(f, RESERVED_BYTE, 1, true)) return refused();
+        f->held |= HELD_RESERVED;
+        f->level = SQLITE_LOCK_RESERVED;
         return SQLITE_OK;
     }
-    /* EXCLUSIVE: PENDING keeps new readers out until the others have gone */
-    l->level = f->level = SQLITE_LOCK_PENDING;
-    if (l->shared > 1) return SQLITE_BUSY;
-    l->level = f->level = SQLITE_LOCK_EXCLUSIVE;
+    if (!(f->held & HELD_PENDING)) {
+        if (!take(f, PENDING_BYTE, 1, true)) return refused();
+        f->held |= HELD_PENDING;
+        f->level = SQLITE_LOCK_PENDING;
+    }
+    if (!take(f, SHARED_FIRST, SHARED_SIZE, true)) return refused();
+    f->level = SQLITE_LOCK_EXCLUSIVE;
     return SQLITE_OK;
 }
 
 static int zdos_unlock(sqlite3_file *id, int level) {
     ZdosFile *f = (ZdosFile *)id;
-    ZdosLock *l = f->lock;
     if (f->level <= level) return SQLITE_OK;
-    if (l == NULL) {
+    if (!f->locks) {
         f->level = level;
         return SQLITE_OK;
     }
-    if (f->level > SQLITE_LOCK_SHARED) l->level = SQLITE_LOCK_SHARED;
-    if (level == SQLITE_LOCK_NONE) {
-        if (--l->shared == 0) l->level = SQLITE_LOCK_NONE;
+    if (f->level == SQLITE_LOCK_EXCLUSIVE && level == SQLITE_LOCK_SHARED) {
+        take(f, SHARED_FIRST, SHARED_SIZE, false); /* back to shared: nobody else can be in the way */
     }
+    if (f->held & HELD_PENDING) drop(f, PENDING_BYTE, 1);
+    if (f->held & HELD_RESERVED) drop(f, RESERVED_BYTE, 1);
+    f->held = 0;
+    if (level == SQLITE_LOCK_NONE) drop(f, SHARED_FIRST, SHARED_SIZE);
     f->level = level;
     return SQLITE_OK;
 }
 
+/* RESERVED held by this file, or by another (its byte can't be taken) */
 static int zdos_check_reserved(sqlite3_file *id, int *out) {
     ZdosFile *f = (ZdosFile *)id;
-    *out = f->lock != NULL && f->lock->level > SQLITE_LOCK_SHARED;
-    return SQLITE_OK;
+    *out = 0;
+    if (!f->locks) return SQLITE_OK;
+    if (f->held & HELD_RESERVED) {
+        *out = 1;
+        return SQLITE_OK;
+    }
+    if (zdos->files->lock(f->handle, RESERVED_BYTE, 1, ZDOS_LOCK_EXCLUSIVE, 0)) {
+        drop(f, RESERVED_BYTE, 1);
+        return SQLITE_OK;
+    }
+    uint32_t e = zdos->programs->last_error();
+    if (e == ZDOS_ERROR_WOULD_BLOCK) *out = 1;
+    return e == ZDOS_ERROR_WOULD_BLOCK || e == ZDOS_ERROR_NOT_SUPPORTED ? SQLITE_OK : SQLITE_IOERR_CHECKRESERVEDLOCK;
 }
 
 static int zdos_file_control(sqlite3_file *id, int op, void *arg) {
@@ -298,13 +293,7 @@ static int zdos_open_file(sqlite3_vfs *vfs, sqlite3_filename name, sqlite3_file 
     }
     if (f->handle < 0) return SQLITE_CANTOPEN;
 
-    if (flags & SQLITE_OPEN_MAIN_DB) {
-        f->lock = lock_for(path);
-        if (f->lock == NULL) {
-            zdos->files->close(f->handle);
-            return SQLITE_NOMEM;
-        }
-    }
+    f->locks = (flags & SQLITE_OPEN_MAIN_DB) != 0;
     if (flags & SQLITE_OPEN_DELETEONCLOSE) {
         f->delete_on_close = sqlite3_mprintf("%s", path);
     }
