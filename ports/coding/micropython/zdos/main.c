@@ -11,6 +11,12 @@
 #include "shared/runtime/pyexec.h"
 #include "zdos.h"
 
+// The version for ZDOS: py/mpconfig.h's, expanded before
+// ZDOS_FILE_VERSION's #
+#define MP_FILE_VERSION(a, b, c) ZDOS_FILE_VERSION(a, b, c, 0)
+#define MP_FILE_VERSION_OF(a, b, c) MP_FILE_VERSION(a, b, c)
+MP_FILE_VERSION_OF(MICROPY_VERSION_MAJOR, MICROPY_VERSION_MINOR, MICROPY_VERSION_MICRO);
+
 void zdos_vfs_mount_root(void);
 
 // No frozen modules in this port

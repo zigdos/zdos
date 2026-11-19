@@ -34,6 +34,15 @@ if [ ! -f "$VGA" ] || [ "$TREE/unix/sw_draw.c" -nt "$VGA" ] || [ "$PORT/zsnes-zd
         die "zsnes-zdos-vga.patch doesn't apply to unix/sw_draw.c"
 fi
 cmp -s "$PORT/config.h" "$TREE/config.h" || cp -p "$PORT/config.h" "$TREE/config.h"
+# The version, from ver.h's ZVER (main.c):
+ver=$(sed -n 's/^#define ZVER "\([0-9][0-9.]*\)".*/\1/p' "$TREE/ver.h")
+[ -n "$ver" ] || die "no version in $ZSNES_SRC/ver.h"
+IFS=. read -r v1 v2 v3 _ <<EOF
+$ver
+EOF
+printf '#define ZSNES_VERSION_MAJOR %d\n#define ZSNES_VERSION_MINOR %d\n#define ZSNES_VERSION_PATCH %d\n' \
+    "$((10#$v1))" "$((10#${v2:-0}))" "$((10#${v3:-0}))" >"$BUILD/version-zdos.h"
+cmp -s "$BUILD/version-zdos.h" "$TREE/version-zdos.h" || cp "$BUILD/version-zdos.h" "$TREE/version-zdos.h"
 mkdir -p "$TREE/SDL3"
 sync_files "$PORT/SDL3" "$TREE/SDL3"
 
@@ -98,7 +107,7 @@ for arch in $(arches "$@"); do
         [ "$arch" = x86 ] && [ "$s" = unix/sw_draw.c ] && s=unix/sw_draw_vga.c
         o=$obj/${s%.c}.o
         objs+=("$o")
-        [ "$o" -nt "$TREE/$s" ] && [ "$o" -nt "$TREE/config.h" ] && [ "$o" -nt "$PORT/zsnes-zdos.patch" ] &&
+        [ "$o" -nt "$TREE/$s" ] && [ "$o" -nt "$TREE/config.h" ] && [ "$o" -nt "$TREE/version-zdos.h" ] && [ "$o" -nt "$PORT/zsnes-zdos.patch" ] &&
             [ "$o" -nt "$TREE/SDL3/SDL.h" ] && continue
         mkdir -p "$(dirname "$o")"
         $CC $CFLAGS $DEFS $INCLUDES -c "$TREE/$s" -o "$o" &

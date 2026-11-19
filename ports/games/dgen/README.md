@@ -9,7 +9,7 @@ ports/games/dgen/build.sh             # all three CPUs (builds sdl12 first if mi
 ports/games/dgen/build.sh x86_64      # one or more: x86, x86_64, arm64
 ```
 
-Sources: `$ZDOS_PORTS_SRC/dgen` (`../dgen` when that variable is unset; `DGEN_SRC=...`), left unchanged: `build.sh` copies them into `build/dgen/tree` (`DGEN_BUILD=...`), applies `dgen-zdos.patch`, generates what `make` would (Musashi's opcode handlers with `m68kmake`, the message bar's fonts with `pbm2df`; both built with the host's `cc`, `HOSTCC=...`), and compiles with `zdos-cc` / `zdos-c++` (objects in `build/dgen/<arch>/`). No `configure`: `config.h` is given to every source (`-include`).
+Sources: `$ZDOS_PORTS_SRC/dgen` (`../dgen` when that variable is unset; `DGEN_SRC=...`), left unchanged: `build.sh` copies them into `build/dgen/tree` (`DGEN_BUILD=...`), applies `dgen-zdos.patch`, generates what `make` would (Musashi's opcode handlers with `m68kmake`, the message bar's fonts with `pbm2df`; both built with the host's `cc`, `HOSTCC=...`), and compiles with `zdos-cc` / `zdos-c++` (objects in `build/dgen/<arch>/`). No `configure`: `config.h` is given to every source (`-include`). The version for ZDOS is taken from `configure.ac`.
 
 ## Configuration
 

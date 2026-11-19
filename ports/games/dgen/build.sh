@@ -26,6 +26,15 @@ if [ $stale = 1 ]; then
     patch -s -d "$TREE" -p1 <"$PORT/dgen-zdos.patch" || die "dgen-zdos.patch doesn't apply to $DGEN_SRC"
 fi
 cmp -s "$PORT/config.h" "$TREE/config.h" || cp -p "$PORT/config.h" "$TREE/config.h"
+# The version, from configure.ac's AC_INIT (its second field, [1.33]):
+ver=$(sed -n '/^AC_INIT(/,/)/p' "$DGEN_SRC/configure.ac" | sed -n '3s/^[[:space:]]*\[\([0-9][0-9.]*\)\].*/\1/p')
+[ -n "$ver" ] || die "no version in $DGEN_SRC/configure.ac"
+IFS=. read -r v1 v2 v3 _ <<EOF
+$ver
+EOF
+printf '#define VERSION "%s"\n#define DGEN_VERSION_MAJOR %d\n#define DGEN_VERSION_MINOR %d\n#define DGEN_VERSION_PATCH %d\n' \
+    "$ver" "$((10#$v1))" "$((10#${v2:-0}))" "$((10#${v3:-0}))" >"$BUILD/version-zdos.h"
+cmp -s "$BUILD/version-zdos.h" "$TREE/version-zdos.h" || cp "$BUILD/version-zdos.h" "$TREE/version-zdos.h"
 
 # What make would generate on the host: Musashi's opcode handlers and
 # the message bar's fonts:
@@ -63,7 +72,7 @@ for arch in $(arches "$@"); do
     for s in $SOURCES; do
         o=$obj/${s%.*}.o
         objs+=("$o")
-        [ "$o" -nt "$TREE/$s" ] && [ "$o" -nt "$TREE/config.h" ] && [ "$o" -nt "$PORT/dgen-zdos.patch" ] && continue
+        [ "$o" -nt "$TREE/$s" ] && [ "$o" -nt "$TREE/config.h" ] && [ "$o" -nt "$TREE/version-zdos.h" ] && [ "$o" -nt "$PORT/dgen-zdos.patch" ] && continue
         mkdir -p "$(dirname "$o")"
         case $s in
             *.cpp) $CC $CFLAGS -std=gnu++98 $DEFS $INCLUDES -c "$TREE/$s" -o "$o" & ;;

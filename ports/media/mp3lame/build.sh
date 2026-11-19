@@ -56,7 +56,7 @@ for arch in $(arches "$@"); do
     [ -z "$missing" ] || die "LAME library lacks exports: $missing"
 
     echo "=== MP3LAME.ZDL for $arch ==="
-    $CC -O2 -I"$obj" -I"$MP3LAME_SRC/include" -I"$PORT" \
+    $CC -O2 -I"$obj" -I"$MP3LAME_SRC/include" -I"$MP3LAME_SRC" -I"$PORT" \
         -c "$PORT/lame_zdl.c" -o "$obj/lame_zdl.o"
     (cd "$obj" && $CC -Wl,--start-group lame_zdl.o "$archive" -Wl,--end-group \
         -lm -Wl,--gc-sections -o MP3LAME.ZDL)

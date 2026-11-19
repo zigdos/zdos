@@ -4,7 +4,7 @@
    OpenGL, joysticks, libarchive or debugger, and no hqx (its 64 MB lookup
    table is static) */
 #define PACKAGE "dgen-sdl"
-#define VERSION "1.33"
+#include "version-zdos.h" /* VERSION, from configure.ac (build.sh) */
 #define NDEBUG 1
 #define HAVE_FTELLO 1
 #define HAVE_GLOB_H 1

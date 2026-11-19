@@ -148,3 +148,22 @@
  #define DIR_SLASH "/"
  #define DIR_SLASH_C '/'
  #define DIR_SLASH_C_OTHER '\\'
+--- a/main.c
++++ b/main.c
+@@ -40,6 +40,16 @@
+ #include "zloader.h"
+ #include "zpath.h"
+ 
++#ifdef __zdos__
++// The version for ZDOS: ver.h's ZVER, as numbers (build.sh),
++// expanded before ZDOS_FILE_VERSION's #
++#include "version-zdos.h"
++#include "zdos.h"
++#define ZSNES_FILE_VERSION(a, b, c) ZDOS_FILE_VERSION(a, b, c, 0)
++#define ZSNES_FILE_VERSION_OF(a, b, c) ZSNES_FILE_VERSION(a, b, c)
++ZSNES_FILE_VERSION_OF(ZSNES_VERSION_MAJOR, ZSNES_VERSION_MINOR, ZSNES_VERSION_PATCH);
++#endif
++
+ #ifdef QT_DEBUGGER
+ #include "debugger/load.h"
+ #endif

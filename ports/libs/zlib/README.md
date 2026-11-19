@@ -8,7 +8,7 @@ ports/libs/zlib/build.sh x86_64      # one or more: x86, x86_64, arm64
 zig build                            # puts them onto drive C:
 ```
 
-Sources: zlib's release (`zlib-1.3.2.tar.gz` from zlib.net or github.com/madler/zlib), unpacked unchanged into `$ZDOS_PORTS_SRC/zlib` (`../zlib` when that variable is unset; `ZLIB_SRC=...`). Objects: `build/zlib/<arch>/`; the sources are only read.
+Sources: zlib's release (`zlib-v.v.v.tar.gz` from zlib.net or github.com/madler/zlib), unpacked unchanged into `$ZDOS_PORTS_SRC/zlib` (`../zlib` when that variable is unset; `ZLIB_SRC=...`). Objects: `build/zlib/<arch>/`; the sources are only read. The version for ZDOS is taken from `zlib.h`.
 
 ## How it is made
 

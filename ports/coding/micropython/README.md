@@ -7,7 +7,7 @@ ports/coding/micropython/build.sh             # all three editions
 ports/coding/micropython/build.sh x86         # one: x86 (BIOS), x86_64, arm64
 ```
 
-The sources are `../micropython` next to the ZDOS folder (`MICROPYTHON=` moves it). The build script copies `zdos/` into the checkout as `ports/zdos` (only changed files), builds there with `make` (objects in `ports/zdos/build-<arch>/`), and puts `micropython.app` into `build/<edition>/APPS_3RD/` (for x86-64 and ARM64 both the UEFI and the metal edition's); the next `zig build` puts it into `C:\APPS`.
+The sources are `../micropython` next to the ZDOS folder (`MICROPYTHON=` moves it). The build script copies `zdos/` into the checkout as `ports/zdos` (only changed files), builds there with `make` (objects in `ports/zdos/build-<arch>/`), and puts `micropython.app` into `build/<edition>/APPS_3RD/` (for x86-64 and ARM64 both the UEFI and the metal edition's); the next `zig build` puts it into `C:\APPS`. The version for ZDOS is taken from `py/mpconfig.h`.
 
 On ZDOS, `MICROPYTHON` starts the REPL and `MICROPYTHON SCRIPT.PY a b` runs a script; its exit status is the ERRORLEVEL.
 

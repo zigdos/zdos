@@ -8,7 +8,7 @@ ports/coding/lua/build.sh             # all three editions
 ports/coding/lua/build.sh x86         # one: x86 (BIOS), x86_64, arm64
 ```
 
-The sources are `../lua/src` next to the ZDOS folder (the folder with `onelua.c`; `LUA_SRC=` moves it). `lua.app` goes into `build/<edition>/APPS_3RD/` (for x86-64 and ARM64 both the UEFI and the metal edition's), and the next `zig build` puts it into `C:\APPS`.
+The sources are `../lua/src` next to the ZDOS folder (the folder with `onelua.c`; `LUA_SRC=` moves it). The version for ZDOS is taken from `lua.h` (`version.c`). `lua.app` goes into `build/<edition>/APPS_3RD/` (for x86-64 and ARM64 both the UEFI and the metal edition's), and the next `zig build` puts it into `C:\APPS`.
 
 ## Status
 
@@ -31,8 +31,8 @@ The sources are `../lua/src` next to the ZDOS folder (the folder with `onelua.c`
 
 ## Floating point
 
-The BIOS kernel turns the FPU on at boot (and SSE where the CPU has it, `enableFpu` in `src/arch/x86.zig`); 32-bit Lua uses the x87 unit. ZDOS doesn't save FPU state around programs, which is fine as long as a program leaves it as it found it; Lua doesn't change the control word. x86-64 uses SSE, ARM64 its own FP registers. On ARM64 `setjmp` / `longjmp` save x19-x30, sp and d8-d15, but not FPCR / FPSR.
+The BIOS kernel turns the FPU on at boot (and SSE where the CPU has it, `enableFpu` in `src/arch/x86.zig`); 32-bit Lua uses the x87 unit. Each task has its own FPU state (the BIOS kernel saves it on every switch), and the SDK's start sets the x87 to double precision (control word `027F`, as ZDOS's Zig programs do), so Lua's numbers are the doubles they are on x86-64 and ARM64; Lua doesn't change the control word. x86-64 uses SSE, ARM64 its own FP registers. On ARM64 `setjmp` / `longjmp` save x19-x30, sp and d8-d15, but not FPCR / FPSR.
 
-## Tests to run next
+## Tests (not yet run)
 
 From Lua's `testes/`: the self-contained ones (`math.lua`, `strings.lua`, `sort.lua` ...); not `files.lua`, `main.lua`, `cstack.lua`.

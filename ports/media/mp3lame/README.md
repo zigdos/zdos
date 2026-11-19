@@ -13,7 +13,7 @@ ports/media/mp3lame/build.sh x86_64       # one or more architectures
 
 The source tree is `$ZDOS_PORTS_SRC/mp3lame` (or `../mp3lame` when that
 variable is unset); set `MP3LAME_SRC` to override it. Build intermediates are
-kept in `build/mp3lame/<arch>/`. The port uses LAME's portable C
+kept in `build/mp3lame/<arch>/`. The version for ZDOS is taken from `libmp3lame/version.h`. The port uses LAME's portable C
 implementation, without NASM or its optional mpg123 decoder and command-line
 frontend.
 

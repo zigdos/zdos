@@ -1,6 +1,22 @@
 --- a/main.cpp
 +++ b/main.cpp
-@@ -242,6 +242,23 @@
+@@ -31,6 +31,15 @@
+ #include <OS.h>
+ #endif
+ 
++#ifdef __zdos__
++// The version for ZDOS: configure.ac's (build.sh), expanded before
++// ZDOS_FILE_VERSION's #
++#include "zdos.h"
++#define DGEN_FILE_VERSION(a, b, c) ZDOS_FILE_VERSION(a, b, c, 0)
++#define DGEN_FILE_VERSION_OF(a, b, c) DGEN_FILE_VERSION(a, b, c)
++DGEN_FILE_VERSION_OF(DGEN_VERSION_MAJOR, DGEN_VERSION_MINOR, DGEN_VERSION_PATCH);
++#endif
++
+ #ifdef __MINGW32__
+ static long dgen_mingw_detach = 1;
+ #endif
+@@ -242,6 +251,23 @@
  	}
  	else
  		fprintf(stderr, "rc: %s: %s\n", DGEN_RC, strerror(errno));

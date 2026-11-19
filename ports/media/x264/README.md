@@ -11,7 +11,7 @@ ports/media/x264/build.sh x86_64          # one or more architectures
 
 The source tree is `$ZDOS_PORTS_SRC/x264` (or `../x264` when that variable is
 unset); set `X264_SRC` to override it. The build directory is local to this
-port at `build/x264/`. Threads remain enabled and use the SDK's POSIX thread
+port at `build/x264/`. The version for ZDOS is taken from `x264.h` (`X264_BUILD`). Threads remain enabled and use the SDK's POSIX thread
 support, which the build verifies. The x86 build disables assembly because the
 BIOS target does not assume SIMD; x86-64 and ARM64 use x264's assembly
 optimizations.

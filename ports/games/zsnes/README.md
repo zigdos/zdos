@@ -9,7 +9,7 @@ ports/games/zsnes/build.sh             # all three CPUs (builds SDL 2 first if m
 ports/games/zsnes/build.sh x86_64      # one or more: x86, x86_64, arm64
 ```
 
-Sources: `$ZDOS_PORTS_SRC/zsnes` (`../zsnes` when that variable is unset; `ZSNES_SRC=...`), left unchanged: `build.sh` copies them into `build/zsnes/tree` (`ZSNES_BUILD=...`; without `.git`, `server`, `win`, `macos`), applies `zsnes-zdos.patch`, makes the config file readers from the `.psr` files with `parsegen.py` (`python3`, `PYTHON=...`), and compiles with `zdos-cc` (objects in `build/zsnes/<arch>/`). No Makefile: `config.h` is given to every source (`-include`), the sources are the Makefile's for its Unix/SDL build.
+Sources: `$ZDOS_PORTS_SRC/zsnes` (`../zsnes` when that variable is unset; `ZSNES_SRC=...`), left unchanged: `build.sh` copies them into `build/zsnes/tree` (`ZSNES_BUILD=...`; without `.git`, `server`, `win`, `macos`), applies `zsnes-zdos.patch`, makes the config file readers from the `.psr` files with `parsegen.py` (`python3`, `PYTHON=...`), and compiles with `zdos-cc` (objects in `build/zsnes/<arch>/`). No Makefile: `config.h` is given to every source (`-include`), the sources are the Makefile's for its Unix/SDL build. The version for ZDOS is taken from `ver.h`.
 
 ## Configuration
 
