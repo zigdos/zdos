@@ -61,6 +61,7 @@ fn fillSystem(drive: []const u8, e: []const u8, floppy: bool) void {
         put(drive, "/DATA", inFolder("data", ""));
         put(drive, "/SYSTEM/FONTS", inFolder("fonts/terminal", ".zfn"));
         put(drive, "/SYSTEM/FONTS", inFolder("fonts/codepages", ".zcp"));
+        put(drive, "/SYSTEM/TTF", ttfFonts());
         put(drive, "/SYSTEM/KEYB", inFolder("keyb", ".ZKB"));
         put(drive, "/SCRIPTS", inFolder("scripts", ""));
         put(drive, "/CONF", inFolder("conf", ""));
@@ -68,6 +69,30 @@ fn fillSystem(drive: []const u8, e: []const u8, floppy: bool) void {
         put(drive, "/DOCS", inFolder("docs", ""));
     }
     put(drive, "/TEMP", &.{}); // TEMP= in SYSTEM.CFG
+}
+
+// TrueType and OpenType fonts for \SYSTEM\TTF: fonts/TTF's and those
+// in $ZDOS_PORTS_SRC/TTF (unset: ../TTF), at any depth there; variable
+// fonts ("Variable" in the name) left out.
+fn ttfFonts() []const []const u8 {
+    var out = std.ArrayList([]const u8).init(files.gpa);
+    const src = std.process.getEnvVarOwned(files.gpa, "ZDOS_PORTS_SRC") catch "..";
+    for ([_][]const u8{ "fonts/TTF", fmt("{s}/TTF", .{src}) }) |dir| addFonts(dir, &out);
+    return out.items;
+}
+
+fn addFonts(dir: []const u8, out: *std.ArrayList([]const u8)) void {
+    if (!files.isDir(dir)) return;
+    for (files.list(dir)) |name| {
+        const path = fmt("{s}/{s}", .{ dir, name });
+        if (files.isDir(path)) {
+            addFonts(path, out);
+            continue;
+        }
+        const font = std.ascii.endsWithIgnoreCase(name, ".ttf") or std.ascii.endsWithIgnoreCase(name, ".otf");
+        if (!font or std.ascii.indexOfIgnoreCase(name, "variable") != null) continue;
+        out.append(path) catch files.fail("out of memory", .{});
+    }
 }
 
 // FAT SYSTEM DISK AND BOOT FLOPPY (BIOS)

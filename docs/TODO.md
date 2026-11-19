@@ -20,7 +20,7 @@
 
 ## Screen and input
 - [ ] Graphical user interface.
-- [ ] Freetype fonts.
+- [x] Freetype fonts.
 - [x] VESA modes on BIOS.
 - [ ] Keyboard layouts: Japanese (input method), Hebrew and Arabic (right-to-left).
 - [ ] USB hubs and hot-plugging check on real hardware.

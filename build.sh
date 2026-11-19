@@ -99,16 +99,27 @@ put() {
             mdir -i $drive ::$path >/dev/null 2>&1 || mmd -i $drive ::$path
         done
         for f in "$@"; do
-            if [ -d $f ]; then
-                put $drive $to/$(basename $f) $f/*
+            if [ -d "$f" ]; then
+                put $drive $to/$(basename "$f") "$f"/*
             else
-                mcopy -D o -i $drive $f ::$to/
+                mcopy -D o -i $drive "$f" ::$to/
             fi
         done
     else
         mkdir -p "$drive$to"
         [ $# = 0 ] || cp -R "$@" "$drive$to/"
     fi
+}
+
+# TrueType and OpenType fonts for \SYSTEM\TTF (disks.zig's ttfFonts):
+# fonts/TTF's and $ZDOS_PORTS_SRC/TTF's (unset: ../TTF), at any depth;
+# not variable ones.
+ttf_fonts() {
+    local d
+    for d in fonts/TTF "${ZDOS_PORTS_SRC:-..}/TTF"; do
+        [ -d "$d" ] || continue
+        find "$d" -type f \( -iname '*.ttf' -o -iname '*.otf' \) ! -iname '*variable*' | LC_ALL=C sort
+    done
 }
 
 # fill_system <drive> <build folder> [floppy]
@@ -126,6 +137,9 @@ fill_system() {
         put "$1" /DATA build/DATA/*
         put "$1" /DATA data/*
         put "$1" /SYSTEM/FONTS fonts/terminal/*.zfn fonts/codepages/*.zcp
+        local fonts=() f
+        while IFS= read -r f; do fonts+=("$f"); done < <(ttf_fonts)
+        put "$1" /SYSTEM/TTF ${fonts[@]+"${fonts[@]}"}
         put "$1" /SYSTEM/KEYB keyb/*.ZKB
         put "$1" /SCRIPTS scripts/*
         put "$1" /CONF conf/*
