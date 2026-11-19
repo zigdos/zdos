@@ -366,6 +366,8 @@ pub fn openFile(vol: Volume, path: []const u8, mode: platform.OpenMode) platform
 
 pub const read = fsd.read;
 pub const fstat = fsd.fstat;
+pub const fileKey = fsd.fileKey;
+pub const FileKey = fsd.FileKey;
 pub const setModifiedOpen = fsd.setModifiedOpen;
 pub const write = fsd.write;
 pub const seek = fsd.seek;

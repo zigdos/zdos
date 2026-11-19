@@ -60,7 +60,8 @@
 
 ## Apps and SDK
 - [ ] NetSurf: SVG; uploads and downloads - GUI Pickers.
-- [ ] SQLite: locks between programs (a kernel lock table), WAL.
+- [x] File locks between programs (SQLite too).
+- [ ] SQLite: WAL (shared memory).
 - [ ] `SDL2.ZDL` testing.
 - [ ] TinyGL / PortableGL: several cores, a 16-bit TinyGL for BIOS, PortableGL demos: nuklear or models - under question.
 - [ ] FFmpeg: text subtitles in ffplay (libass, FreeType), encoders.

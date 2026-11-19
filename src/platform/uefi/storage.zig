@@ -28,6 +28,7 @@ const FwHandle = struct {
     file: *const File,
     vol: u8,
     epoch: u32,
+    key: u64 = 0, // the path (fileKey): no inode here
 };
 pub const FileHandle = union(enum) {
     firmware: FwHandle,
@@ -971,9 +972,29 @@ pub fn stat(vol: Volume, path: []const u8, out: *platform.EntryInfo) Error!void 
 pub fn openFile(vol: Volume, path: []const u8, mode: platform.OpenMode) Error!FileHandle {
     try alive(vol);
     return switch (vol.*) {
-        .firmware => |root| .{ .firmware = .{ .file = try fwOpenFile(root, path, mode), .vol = @intCast(indexOf(vol)), .epoch = epoch[indexOf(vol)] } },
+        .firmware => |root| .{ .firmware = .{ .file = try fwOpenFile(root, path, mode), .vol = @intCast(indexOf(vol)), .epoch = epoch[indexOf(vol)], .key = pathKey(path) } },
         .driver => |*v| .{ .driver = try fsd.openFile(v, path, mode) },
     };
+}
+
+pub const FileKey = fsd.FileKey;
+
+// The firmware's FAT: the volume's number and the path, as FAT
+// compares names (capitals, either slash)
+pub fn fileKey(f: FileHandle) FileKey {
+    return switch (f) {
+        .firmware => |h| .{ .volume = h.vol, .id = h.key },
+        .driver => |h| fsd.fileKey(h),
+    };
+}
+
+fn pathKey(path: []const u8) u64 {
+    var h: u64 = 0xcbf29ce484222325;
+    for (path) |c| {
+        const k = if (c == '/') '\\' else std.ascii.toUpper(c);
+        h = (h ^ k) *% 0x100000001b3;
+    }
+    return h;
 }
 
 pub fn read(f: FileHandle, buf: []u8) Error!usize {

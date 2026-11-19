@@ -485,6 +485,9 @@ pub const storage = struct {
     pub const closeDir = Locked(b.closeDir).call;
     pub const commit = Locked(b.commit).call;
     pub const fstat = Locked(b.fstat).call;
+    // Reads only what opening set: no lock
+    pub const fileKey = b.fileKey;
+    pub const FileKey = b.FileKey;
     pub const read = Locked(b.read).call;
     pub const readDir = Locked(b.readDir).call;
     pub const seek = Locked(b.seek).call;

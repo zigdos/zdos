@@ -12,6 +12,7 @@ const perm = @import("perm.zig");
 const abi = @import("abi.zig");
 const loader = @import("loader.zig");
 const stdio = @import("stdio.zig");
+const locks = @import("locks.zig");
 const env = @import("env.zig");
 const datetime = @import("datetime.zig");
 const arch = @import("../arch.zig");
@@ -284,6 +285,8 @@ const files_group: abi.FilesApi = .{
     .fset_time = fsetFileTime,
     .queue_create = queueCreate,
     .queue_events = queueEvents,
+    .lock = lockRange,
+    .unlock = unlockRange,
     .reserved_files = @splat(&notSupported),
     .open_dir = openDir,
     .read_dir = readDir,
@@ -2488,6 +2491,39 @@ fn statExPath(path: [*]const u8, len: usize, info: *abi.StatEx) Error!void {
     var e: platform.EntryInfo = .{};
     try fs.entryInfo(r.drive, &r.path, &e);
     putStatEx(&e, r.drive.letter, r.path.slice(), info);
+}
+
+// LOCKS (kernel/locks.zig)
+
+fn lockRange(handle: i32, offset: u64, length: u64, flags: u32, timeout_ms: i32) callconv(abi.cc) bool {
+    if (flags & ~abi.LockFlags.exclusive != 0) return fail(.invalid_argument);
+    const f = lockedFile(handle) catch |err| return succeeded(err);
+    const exclusive = flags & abi.LockFlags.exclusive != 0;
+    locks.lock(platform.storage.fileKey(f.handle), f, offset, length, exclusive, timeoutOf(timeout_ms)) catch |err| return fail(switch (err) {
+        error.WouldBlock => .would_block,
+        error.TimedOut => .timed_out,
+        error.Interrupted => .interrupted,
+        error.InvalidArgument => .invalid_argument,
+        error.OutOfMemory => .out_of_memory,
+    });
+    prog().last_error = .none;
+    return true;
+}
+
+fn unlockRange(handle: i32, offset: u64, length: u64) callconv(abi.cc) bool {
+    const f = lockedFile(handle) catch |err| return succeeded(err);
+    const found = locks.unlock(platform.storage.fileKey(f.handle), f, offset, length) catch false;
+    if (!found) return fail(.invalid_argument);
+    prog().last_error = .none;
+    return true;
+}
+
+// Locks are on files only
+fn lockedFile(handle: i32) Error!*stdio.File {
+    return switch (try byHandle(handle)) {
+        .file => |f| f,
+        else => error.InvalidHandle,
+    };
 }
 
 fn fstatEx(handle: i32, info: *abi.StatEx) callconv(abi.cc) bool {

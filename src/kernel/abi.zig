@@ -234,6 +234,11 @@ pub const OpenMode = enum(u32) {
 
 pub const seek_end = std.math.maxInt(u64);
 
+// files->lock's flags
+pub const LockFlags = struct {
+    pub const exclusive: u32 = 1;
+};
+
 pub const Attr = struct {
     pub const read_only = 0x01;
     pub const hidden = 0x02;
@@ -569,7 +574,20 @@ pub const FilesApi = extern struct {
     // the changes before it stay). A watch goes when
     // its handle is closed.
     queue_events: *const fn (queue: i32, changes: ?[*]const QueueChange, count: u32, out: ?[*]QueueEvent, max: u32, timeout_ms: i32) callconv(cc) i32,
-    reserved_files: [6]Reserved,
+    // length bytes of an open file from offset (0: on to the
+    // end, however far it grows), as Windows' LockFileEx: the
+    // handle's (and its dup copies'), gone when they close.
+    // flags: LockFlags.exclusive, else shared. Other handles'
+    // locks in the way: waits up to timeout_ms (-1: no limit;
+    // 0: fails at once, would_block; else timed_out,
+    // interrupted). The handle's own locks never are; the same
+    // range again converts its lock. Advisory: reads and writes
+    // don't look at locks. out_of_memory: the table is full
+    lock: *const fn (handle: i32, offset: u64, length: u64, flags: u32, timeout_ms: i32) callconv(cc) bool,
+    // Removes the handle's lock of exactly that
+    // range (invalid_argument if there is none)
+    unlock: *const fn (handle: i32, offset: u64, length: u64) callconv(cc) bool,
+    reserved_files: [4]Reserved,
 
     // FOLDERS
 

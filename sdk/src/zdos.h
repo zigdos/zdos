@@ -92,6 +92,7 @@ typedef enum {
 } zdos_open_mode;
 
 #define ZDOS_SEEK_END UINT64_MAX
+#define ZDOS_LOCK_EXCLUSIVE 1u /* files->lock's flags */
 
 /* ZDOS's own codes, not errno; the SDK's POSIX functions translate them */
 typedef enum {
@@ -430,7 +431,18 @@ typedef struct {
        A watch goes when its handle is closed. */
     int32_t (ZDOS_CALL *queue_events)(int32_t queue, const zdos_queue_change *changes, uint32_t count,
                                       zdos_queue_event *out, uint32_t max, int32_t timeout_ms);
-    zdos_reserved reserved_files[6];
+    /* length bytes of an open file from offset (0: on to the end, however
+       far it grows), as Windows' LockFileEx: the handle's (and its dup
+       copies'), gone when they close. flags: ZDOS_LOCK_EXCLUSIVE, else
+       shared. Other handles' locks in the way: waits up to timeout_ms (-1:
+       no limit; 0: fails at once, WOULD_BLOCK; else TIMED_OUT,
+       INTERRUPTED). The handle's own locks never are; the same range again
+       converts its lock. Advisory: reads and writes don't look at locks.
+       OUT_OF_MEMORY: the table is full. */
+    bool (ZDOS_CALL *lock)(int32_t handle, uint64_t offset, uint64_t length, uint32_t flags, int32_t timeout_ms);
+    /* The handle's lock of exactly that range goes (INVALID_ARGUMENT: none) */
+    bool (ZDOS_CALL *unlock)(int32_t handle, uint64_t offset, uint64_t length);
+    zdos_reserved reserved_files[4];
 
     /* Folders */
     int32_t (ZDOS_CALL *open_dir)(const char *path, size_t len);

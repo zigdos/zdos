@@ -215,6 +215,8 @@ Programs running at the same time, as tasks (group `tasks`), on every edition; a
 
 **CPU faults** (metal and BIOS): a fault in a program's code gives it the signal (SIGSEGV, SIGILL, SIGFPE, SIGBUS, SIGTRAP); without a handler it ends with 128 + the signal and a line on the error output. On metal address 0 and a guard page below every stack are unmapped. A fault in ZDOS's own code shows the crash screen and halts: a file system may be half updated.
 
+**Locks** (group `files`): `lock(handle, offset, length, flags, timeout_ms)` / `unlock(handle, offset, length)`, byte ranges as Windows' `LockFileEx`: shared or `exclusive`, the handle's own (and its `dup` copies'), gone when they close; `length` 0 runs to the end, however far the file grows. Another handle's lock in the way: a wait up to `timeout_ms` (0: `WouldBlock` at once). Advisory: reads and writes don't look at them. C's `flock` is built on them.
+
 **Pipes, dup, poll** (group `files`): `pipe()` gives two ends between tasks (64 KiB; `BrokenPipe` and SIGPIPE with no reader); `dup`, `poll`; `queue_create` / `queue_events`, event queues as epoll, over sockets, pipe ends and `threads->counter_create`'s counters (eventfd).
 
 **Signals** (group `signals`, POSIX numbers): `signalSend(task, sig)`, to tasks of the same user, any as root; `set_handler`, `mask`, `pending`, `alarm(ms)`, `wait(mask)`. Without a handler SIGCHLD, SIGURG, SIGWINCH and SIGCONT are ignored, SIGSTOP / SIGTSTP stop the task until SIGCONT, the rest end the program with 128 + the signal. A signal ends waits with `Interrupted`.

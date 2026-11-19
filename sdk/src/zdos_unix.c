@@ -5,6 +5,7 @@
  * pread / pwrite. */
 #include "zdos.h"
 #include "zdos_internal.h"
+#include "zdos_errno.h"
 #include <arpa/inet.h>
 #include <dlfcn.h>
 #include <err.h>
@@ -584,16 +585,37 @@ ssize_t pwritev(int fd, const struct iovec *iov, int count, off_t offset) {
     return n;
 }
 
-/* sys/file.h: LOCKS WITHIN THE PROGRAM */
+/* sys/file.h: LOCKS OF A WHOLE FILE */
 
+/* As BSD's: the open file's (dup copies share it), between programs too;
+   files->lock on the whole file, converted in place. The standard streams
+   have none to take; a ZDOS without locks (NOT_SUPPORTED) grants them. */
 int flock(int fd, int operation) {
-    (void)fd;
     int op = operation & ~LOCK_NB;
     if (op != LOCK_SH && op != LOCK_EX && op != LOCK_UN) {
         errno = EINVAL;
         return -1;
     }
-    return 0;
+    int32_t h = zdos_fd_spawn_handle(fd);
+    if (h == -100) {
+        errno = EBADF;
+        return -1;
+    }
+    if (h < 0) {
+        return 0;
+    }
+    bool ok = op == LOCK_UN ? zdos->files->unlock(h, 0, 0)
+                            : zdos->files->lock(h, 0, 0, op == LOCK_EX ? ZDOS_LOCK_EXCLUSIVE : 0,
+                                                (operation & LOCK_NB) ? 0 : -1);
+    if (ok) {
+        return 0;
+    }
+    uint32_t e = zdos->programs->last_error();
+    if (e == ZDOS_ERROR_NOT_SUPPORTED || (op == LOCK_UN && e == ZDOS_ERROR_INVALID_ARGUMENT)) {
+        return 0; /* nothing held, or nothing to hold it with */
+    }
+    errno = e == ZDOS_ERROR_WOULD_BLOCK ? EWOULDBLOCK : zdos_errno_from_last_error();
+    return -1;
 }
 
 /* dlfcn.h: no shared libraries; dlsym answers from the tables the

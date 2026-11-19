@@ -231,6 +231,20 @@ pub fn fstat(f: *OpenFile, out: *platform.EntryInfo) Error!void {
     };
 }
 
+// The key of kernel/locks.zig, the same for every
+// handle of one file: the volume and the inode
+// (on FAT the entry's folder and slot)
+pub const FileKey = struct { volume: usize, id: u64 };
+
+pub fn fileKey(f: *const OpenFile) FileKey {
+    return switch (f.*) {
+        .fat => |*x| .{ .volume = @intFromPtr(x.v), .id = @as(u64, x.dir) << 32 | x.slot },
+        .mfs => |*x| .{ .volume = @intFromPtr(x.v), .id = x.ino },
+        .ext2 => |*x| .{ .volume = @intFromPtr(x.v), .id = x.ino },
+        .free, .unreadable => .{ .volume = @intFromPtr(f), .id = 0 },
+    };
+}
+
 // Through the open file (files->fset_time).
 pub fn setModifiedOpen(f: *OpenFile, when: platform.DateTime) Error!void {
     return switch (f.*) {

@@ -6,6 +6,7 @@ const std = @import("std");
 const platform = @import("../platform.zig");
 const tasks = @import("tasks.zig");
 const events = @import("events.zig");
+const locks = @import("locks.zig");
 const abi = @import("abi.zig");
 
 pub const FileHandle = platform.storage.FileHandle;
@@ -132,6 +133,7 @@ pub const File = struct {
     pub fn release(self: *File) platform.Error!void {
         self.refs -= 1;
         if (self.refs > 0) return;
+        locks.dropOwner(self);
         const closed = platform.storage.close(self.handle);
         const err = self.err;
         platform.memory.free(@ptrCast(@alignCast(self)));
