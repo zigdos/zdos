@@ -1,0 +1,129 @@
+--- a/CPP/7zip/UI/Common/ExtractingFilePath.cpp
++++ b/CPP/7zip/UI/Common/ExtractingFilePath.cpp
+@@ -32,6 +32,9 @@
+           || c == '/'
+           // || c == 0x202E // RLO
+           ||
++          #elif defined(__zdos__)
++          // ZDOS: "C:" a drive, '\' a folder: not in a name
++          c == ':' || c == '\\' ||
+           #endif
+           c == WCHAR_PATH_SEPARATOR)
+       {
+--- a/CPP/7zip/UI/Console/Main.cpp
++++ b/CPP/7zip/UI/Console/Main.cpp
+@@ -803,6 +803,63 @@
+ void Set_ModuleDirPrefix_From_ProgArg0(const char *s);
+ #endif
+ 
++#ifdef __zdos__
++#include "zdos.h"
++
++// The version for ZDOS: 7-Zip's (7zVersion.h), expanded before
++// ZDOS_FILE_VERSION's #
++#define Z7_FILE_VERSION(a, b, c) ZDOS_FILE_VERSION(a, b, c, 0)
++#define Z7_FILE_VERSION_OF(a, b, c) Z7_FILE_VERSION(a, b, c)
++Z7_FILE_VERSION_OF(MY_VER_MAJOR, MY_VER_MINOR, MY_VER_BUILD);
++
++// ZDOS's paths for 7-Zip's POSIX ones: '\\' -> '/', and "C:/x"
++// -> "/C:/x", absolute (names stored from there, as on Windows).
++// In file arguments, @lists, -o, -w, and -i, -x, -ai, -ax after
++// their '!' or '@'; passwords and other switches as typed.
++static void ZdosPath(UString &s, unsigned from)
++{
++  for (unsigned i = from; i < s.Len(); i++)
++    if (s[i] == '\\')
++      s.ReplaceOneCharAtPos(i, '/');
++  const unsigned n = s.Len() - from;
++  if (n >= 2 && ((s[from] | 0x20) >= 'a' && (s[from] | 0x20) <= 'z') && s[from + 1] == ':'
++      && (n == 2 || s[from + 2] == '/'))
++  {
++    if (n == 2)
++      s += L'/';
++    s.Insert(from, L"/");
++  }
++}
++
++static void ZdosPaths(UStringVector &args)
++{
++  bool switches = true;
++  for (unsigned i = 1; i < args.Size(); i++)
++  {
++    UString &s = args[i];
++    if (switches && s.IsEqualTo("--"))
++      switches = false;
++    else if (switches && s.Len() > 1 && s[0] == '-')
++    {
++      const wchar_t c = (wchar_t)(s[1] | 0x20);
++      if (c == 'o' || c == 'w')
++        ZdosPath(s, 2);
++      else if (c == 'i' || c == 'x' || (c == 'a' && s.Len() > 2 && ((s[2] | 0x20) == 'i' || (s[2] | 0x20) == 'x')))
++      {
++        for (unsigned k = 2; k < s.Len(); k++)
++          if (s[k] == '!' || s[k] == '@')
++          {
++            ZdosPath(s, k + 1);
++            break;
++          }
++      }
++    }
++    else
++      ZdosPath(s, s.Len() > 0 && s[0] == '@' ? 1 : 0);
++  }
++}
++#endif
++
+ int Main2(
+   #ifndef _WIN32
+   int numArgs, char *args[]
+@@ -888,6 +945,9 @@
+       commandStrings.Add(s);
+     }
+     // printf("\n");
++   #ifdef __zdos__
++    ZdosPaths(commandStrings);
++   #endif
+   }
+ 
+   #endif
+--- a/CPP/Windows/FileDir.cpp
++++ b/CPP/Windows/FileDir.cpp
+@@ -1263,12 +1263,18 @@
+     S_ISVTX  01000 sticky bit
+   system's open(), mkdir() also can have similar 0777 restiction for some cases.
+ */
++#ifdef __zdos__
++  const mode_t um = 022; // ZDOS: no umask; Unix's usual one
++#else
+   const mode_t um = umask(0); // um = 0022 (octal) is expected
++#endif
+   mask = ~um
+       & 0777; // 0777 is our additional mode restruction : is secure
+       // & 07777; // for debug : 07777 to support all mode bits : is not secure
+   // mask = 07777; // for debug : to restore all mode bits
++#ifndef __zdos__
+   umask(um); // restore original umask that was changed by umask(0) in code above
++#endif
+ }
+ 
+ C_umask g_umask;
+--- a/CPP/Windows/System.cpp
++++ b/CPP/Windows/System.cpp
+@@ -9,7 +9,7 @@
+     || defined(BSD) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__) \
+     || defined(__QNXNTO__)
+ #include <sys/sysctl.h>
+-#else
++#elif !defined(__zdos__)
+ #include <sys/sysinfo.h>
+ #endif
+ #endif
+@@ -340,7 +340,7 @@
+     #if defined(_SC_AIX_REALMEM) // AIX
+       size64 = (UInt64)sysconf(_SC_AIX_REALMEM) * 1024;
+     #endif
+-  #elif 0 || defined(__sun)
++  #elif 0 || defined(__sun) || defined(__zdos__) // ZDOS: sysconf's RAM
+     #if defined(_SC_PHYS_PAGES) && defined(_SC_PAGESIZE)
+     // FreeBSD, Linux, OpenBSD, and Solaris.
+     {

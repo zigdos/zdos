@@ -1,6 +1,6 @@
 # Ports
 
-Programs and libraries from elsewhere, built for ZDOS with its SDK (`sdk/`). They sit in folders by kind (`coding/`, `databases/`, `games/`, `graphics/`, `libs/`, `media/`, `network/`, `office/`), one folder per port. A port keeps only what ZDOS needs on top of the original sources (configuration, patches, backends, a library's export table) and one `build.sh`. Details of a port are in its own `README.md` and in the header of its `build.sh`.
+Programs and libraries from elsewhere, built for ZDOS with its SDK (`sdk/`). They sit in folders by kind (`coding/`, `databases/`, `games/`, `graphics/`, `libs/`, `media/`, `network/`, `office/`, `tools/`), one folder per port. A port keeps only what ZDOS needs on top of the original sources (configuration, patches, backends, a library's export table) and one `build.sh`. Details of a port are in its own `README.md` and in the header of its `build.sh`.
 
 ## Sources
 
