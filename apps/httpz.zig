@@ -6,7 +6,7 @@ const zdos = @import("zdos/zdos.zig");
 const sys = @import("zdos/system.zig");
 const net = @import("zdos/net.zig");
 const users = @import("zdos/users.zig");
-const tls = @import("httpz/tls.zig");
+const TlsServer = @import("zdos/zcrypt.zig").TlsServer; // ZCRYPT.ZDL
 const cert = @import("httpz/cert.zig");
 const cgi = @import("httpz/cgi.zig");
 const mime = @import("httpz/mime.zig");
@@ -15,10 +15,7 @@ comptime {
     _ = zdos;
 }
 
-pub const std_options: std.Options = .{
-    .cryptoRandomSeed = zdos.randomBytes,
-    .crypto_always_getrandom = true,
-};
+pub const zdos_file_version = [4]u8{ 0, 6, 1, 0 };
 
 const version = "HTTPZ/1.0 (ZDOS)";
 const head_max = 8 * 1024; // a request's line and headers
@@ -80,7 +77,7 @@ var active = std.atomic.Value(u32).init(0); // connections open
 var stopping = std.atomic.Value(bool).init(false);
 // Set before the workers start, then only read:
 var chain: cert.Chain = .{};
-var key: cert.P256.KeyPair = undefined;
+var key: cert.Key = undefined;
 var https_on = false;
 
 pub fn main(args: []const u8) u8 {
@@ -385,7 +382,7 @@ const Conn = struct {
     sock: net.Socket,
     peer: net.Address,
     secure: bool,
-    t: ?*tls.Server = null,
+    t: ?TlsServer = null,
     next: ?*Conn = null, // in ready or handed_back
     deadline: u64 = 0, // while parked: closed then
     head_since: u64 = 0, // a request's first bytes came then (0: none yet)
@@ -413,7 +410,7 @@ const Conn = struct {
     // Or the end, which recv then tells.
     fn readable(c: *const Conn) bool {
         if (c.t) |t| {
-            if (t.plain.len > 0) return true;
+            if (t.pending()) return true;
         }
         return readyNow(c.sock.handle);
     }
@@ -487,10 +484,7 @@ fn park(c: *Conn) void {
 }
 
 fn endConn(c: *Conn) void {
-    if (c.t) |t| {
-        t.close();
-        zdos.allocator.destroy(t);
-    }
+    if (c.t) |t| t.deinit();
     c.sock.close();
     zdos.allocator.destroy(c);
     _ = active.fetchSub(1, .monotonic);
@@ -634,15 +628,11 @@ fn acceptLoop(arg: ?*anyopaque) callconv(zdos.cc) usize {
 // A worker's: requests until there is nothing to read for now.
 fn serveConn(c: *Conn, buf: []u8) void {
     if (c.secure and c.t == null) {
-        const t = zdos.allocator.create(tls.Server) catch return endConn(c);
-        t.* = .{ .sock = c.sock };
-        t.handshake(&chain, &key) catch |err| {
+        c.t = TlsServer.accept(c.sock, chain.certs[0..chain.count], &key) catch |err| {
             var ab: [16]u8 = undefined;
             if (err != error.Closed and err != error.TimedOut) log("{s} TLS: {s}", .{ net.addressText(c.peer.addr, &ab), errText(err) });
-            zdos.allocator.destroy(t);
             return endConn(c);
         };
-        c.t = t;
     }
     while (!stopping.load(.monotonic)) {
         const keep = serveOne(c, buf, c.served + 1 == requests_max) catch |err| {

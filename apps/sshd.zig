@@ -14,13 +14,15 @@ comptime {
     _ = zdos;
 }
 
+pub const zdos_file_version = [4]u8{ 0, 6, 1, 0 };
+
 pub const std_options: std.Options = .{
     .cryptoRandomSeed = zdos.randomBytes,
     .crypto_always_getrandom = true,
 };
 
 const Msg = ssh.Msg;
-const Ed25519 = std.crypto.sign.Ed25519;
+const Ed25519 = @import("zdos/zcrypt.zig").Ed25519;
 
 const max_connections = 8;
 const max_channels = 4;
@@ -91,6 +93,7 @@ pub fn main(args: []const u8) u8 {
             continue;
         };
         c.* = .{ .sock = s, .peer = peer };
+        for (&c.channels) |*ch| ch.reset();
         _ = active.fetchAdd(1, .monotonic);
         const id = sys.threadCreate(&connThread, c, 256 * 1024, null) catch {
             _ = active.fetchSub(1, .monotonic);
@@ -198,6 +201,14 @@ const Channel = struct {
     client_eof: bool = false,
     stdin_closed: bool = false,
     closing: bool = false, // our CLOSE sent
+
+    // Every field's default but the inbox's: a whole default value
+    // would be kept in the program, 64 KB of it per use
+    fn reset(ch: *Channel) void {
+        inline for (std.meta.fields(Channel)) |f| {
+            if (comptime !std.mem.eql(u8, f.name, "inbox")) @field(ch, f.name) = f.defaultValue().?;
+        }
+    }
 };
 
 const Conn = struct {
@@ -206,7 +217,7 @@ const Conn = struct {
     t: *ssh.Transport = undefined,
     user_buf: [users.max_name]u8 = undefined,
     user_len: usize = 0,
-    channels: [max_channels]Channel = [_]Channel{.{}} ** max_channels,
+    channels: [max_channels]Channel = undefined, // reset when made
 
     fn user(self: *const Conn) []const u8 {
         return self.user_buf[0..self.user_len];
@@ -682,7 +693,7 @@ fn endChannel(c: *Conn, ch: *Channel, reply: bool) void {
         w.int(ch.remote) catch {};
         c.t.send(w.slice()) catch {};
     }
-    ch.* = .{};
+    ch.reset();
 }
 
 // SSHD -s USER [-c LINE], as root: the user's home and variables, then

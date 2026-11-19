@@ -5,6 +5,7 @@
 // Programs share all memory: permissions only keep out mistakes.
 const std = @import("std");
 const zdos = @import("zdos.zig");
+const zc = @import("zcrypt.zig"); // ZCRYPT.ZDL: passwords
 
 pub const max_users = 64;
 pub const max_name = 32;
@@ -486,25 +487,17 @@ pub fn restoreVars(saved: *const SavedVars) void {
     for (user_vars, 0..) |name, i| zdos.setVar(name, saved.values[i] orelse "") catch {};
 }
 
-// PASSWORDS: Argon2id, OWASP's settings (19 MB, 2 passes), 16-byte salt
-
-const argon2 = std.crypto.pwhash.argon2;
-const params: argon2.Params = .{ .t = 2, .m = 19 * 1024, .p = 1 };
-const b64 = std.base64.standard_no_pad;
+// PASSWORDS: Argon2id, OWASP's settings (19 MB, 2 passes), 16-byte salt,
+// through ZCRYPT.ZDL
 
 // "" for none; 128 bytes of buf are enough.
 pub fn hashPassword(password: []const u8, buf: []u8) []const u8 {
     if (password.len == 0) return "";
     var salt: [16]u8 = undefined;
     zdos.randomBytes(&salt);
-    var key: [32]u8 = undefined;
-    argon2.kdf(zdos.allocator, &key, password, &salt, params, .argon2id) catch return "";
-    defer std.crypto.secureZero(u8, &key);
-    var salt_text: [b64.Encoder.calcSize(16)]u8 = undefined;
-    var key_text: [b64.Encoder.calcSize(32)]u8 = undefined;
-    return std.fmt.bufPrint(buf, "$argon2id$v=19$m={d},t={d},p={d}${s}${s}", .{
-        params.m, params.t, params.p, b64.Encoder.encode(&salt_text, &salt), b64.Encoder.encode(&key_text, &key),
-    }) catch "";
+    const work = zdos.allocator.alloc(u8, zc.argon2_work) catch return "";
+    defer zdos.allocator.free(work);
+    return zc.argon2idHash(password, &salt, work, buf);
 }
 
 // An empty field: any password does.
@@ -516,8 +509,9 @@ pub fn checkPassword(field: []const u8, password: []const u8) bool {
 pub fn checkPasswordWith(alloc: std.mem.Allocator, field: []const u8, password: []const u8) bool {
     if (field.len == 0) return true;
     if (std.mem.startsWith(u8, field, "$argon2")) {
-        argon2.strVerify(field, password, .{ .allocator = alloc }) catch return false;
-        return true;
+        const work = alloc.alloc(u8, zc.argon2_work) catch return false;
+        defer alloc.free(work);
+        return zc.argon2idVerify(field, password, work);
     }
     if (std.mem.startsWith(u8, field, "sha256$")) return checkOld(field, password);
     return false; // "x": not readable here
@@ -548,13 +542,13 @@ fn checkOld(field: []const u8, password: []const u8) bool {
     _ = parts.next();
     const salt = parts.next() orelse return false;
     const want_hex = parts.next() orelse return false;
-    var h = std.crypto.hash.sha2.Sha256.init(.{});
+    var h = zc.Sha256.init(.{});
     h.update(salt);
     h.update(password);
     var d: [32]u8 = undefined;
     h.final(&d);
     for (0..5000) |_| {
-        var again = std.crypto.hash.sha2.Sha256.init(.{});
+        var again = zc.Sha256.init(.{});
         again.update(&d);
         again.update(password);
         again.final(&d);

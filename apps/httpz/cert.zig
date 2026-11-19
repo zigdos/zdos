@@ -2,33 +2,12 @@
 // and a self-signed pair made when there is none.
 const std = @import("std");
 const zdos = @import("../zdos/zdos.zig");
+const zc = @import("../zdos/zcrypt.zig"); // ZCRYPT.ZDL
 
-pub const P256 = std.crypto.sign.ecdsa.EcdsaP256Sha256;
+// The secret and its public key
+pub const Key = zc.P256Key;
 
 pub const Error = error{ BadPem, BadKey, UnsupportedKey, KeyMismatch, TooBig } || zdos.Error;
-
-// With minimal integers: std's toDer keeps leading zero bytes (1 in 128
-// signatures), which OpenSSL refuses.
-pub fn signatureDer(sig: P256.Signature, buf: *[P256.Signature.der_encoded_length_max]u8) []const u8 {
-    var n: usize = 2;
-    for ([2]*const [32]u8{ &sig.r, &sig.s }) |v| {
-        var i: usize = 0;
-        while (i < 31 and v[i] == 0) i += 1;
-        const pad = v[i] >= 0x80;
-        buf[n] = 0x02;
-        buf[n + 1] = @intCast(32 - i + @intFromBool(pad));
-        n += 2;
-        if (pad) {
-            buf[n] = 0;
-            n += 1;
-        }
-        @memcpy(buf[n..][0 .. 32 - i], v[i..]);
-        n += 32 - i;
-    }
-    buf[0] = 0x30;
-    buf[1] = @intCast(n - 2);
-    return buf[0..n];
-}
 
 pub const max_chain = 4;
 
@@ -141,7 +120,7 @@ fn pkcs8Secret(der: []const u8) Error![32]u8 {
     return sec1Secret(try seq.next(0x04));
 }
 
-pub fn loadKey(path: []const u8) Error!P256.KeyPair {
+pub fn loadKey(path: []const u8) Error!Key {
     var text_buf: [8 * 1024]u8 = undefined;
     const text = try readFile(path, &text_buf);
     var der_buf: [4 * 1024]u8 = undefined;
@@ -157,14 +136,12 @@ pub fn loadKey(path: []const u8) Error!P256.KeyPair {
         secret = try pkcs8Secret(der);
     }
     std.crypto.secureZero(u8, &der_buf);
-    const sk = P256.SecretKey.fromBytes(secret) catch return error.BadKey;
-    return P256.KeyPair.fromSecretKey(sk) catch error.BadKey;
+    return Key.fromSecret(secret);
 }
 
 // The chain's first certificate holds the key's public key.
-pub fn matches(chain: *const Chain, key: P256.KeyPair) bool {
-    const public = key.public_key.toUncompressedSec1();
-    return std.mem.indexOf(u8, chain.certs[0], &public) != null;
+pub fn matches(chain: *const Chain, key: Key) bool {
+    return std.mem.indexOf(u8, chain.certs[0], &key.public) != null;
 }
 
 // SELF-SIGNED CERTIFICATE
@@ -225,7 +202,7 @@ fn name(out: *Out, cn: []const u8) Error!void {
 }
 
 // 10 years from now, for localhost and the names given.
-pub fn makeSelfSigned(key: P256.KeyPair, cn: []const u8, dns_names: []const []const u8, out_der: []u8) Error![]const u8 {
+pub fn makeSelfSigned(key: *const Key, cn: []const u8, dns_names: []const []const u8, out_der: []u8) Error![]const u8 {
     var tbs_buf: [2048]u8 = undefined;
     var tbs: Out = .{ .buf = &tbs_buf };
     var tmp: [1024]u8 = undefined;
@@ -257,7 +234,7 @@ pub fn makeSelfSigned(key: P256.KeyPair, cn: []const u8, dns_names: []const []co
     try spki.tlv(0x30, ids.slice());
     var bits: [66]u8 = undefined;
     bits[0] = 0;
-    bits[1..].* = key.public_key.toUncompressedSec1();
+    bits[1..].* = key.public;
     try spki.tlv(0x03, &bits);
     try tbs.tlv(0x30, spki.slice());
     // Extensions: basicConstraints (not a CA), subjectAltName:
@@ -285,10 +262,9 @@ pub fn makeSelfSigned(key: P256.KeyPair, cn: []const u8, dns_names: []const []co
     var b_tbs_seq: [2048]u8 = undefined;
     var tbs_seq: Out = .{ .buf = &b_tbs_seq };
     try tbs_seq.tlv(0x30, tbs.slice());
-    const sig = key.sign(tbs_seq.slice(), null) catch return error.BadKey;
-    var sig_der: [P256.Signature.der_encoded_length_max]u8 = undefined;
-    const sig_bytes = signatureDer(sig, &sig_der);
-    var sig_bits: [P256.Signature.der_encoded_length_max + 1]u8 = undefined;
+    var sig_der: [72]u8 = undefined;
+    const sig_bytes = try key.signDer(tbs_seq.slice(), &sig_der);
+    var sig_bits: [72 + 1]u8 = undefined;
     sig_bits[0] = 0;
     @memcpy(sig_bits[1..][0..sig_bytes.len], sig_bytes);
 
@@ -306,18 +282,18 @@ pub fn makeSelfSigned(key: P256.KeyPair, cn: []const u8, dns_names: []const []co
 
 // SEC1 ECPrivateKey: SEQUENCE { 1, OCTET STRING D, [0] prime256v1,
 // [1] public }
-fn sec1Der(key: P256.KeyPair, out_buf: []u8) Error![]const u8 {
+fn sec1Der(key: *const Key, out_buf: []u8) Error![]const u8 {
     var b: [200]u8 = undefined;
     var inner: Out = .{ .buf = &b };
     try inner.tlv(0x02, &.{1});
-    try inner.tlv(0x04, &key.secret_key.toBytes());
+    try inner.tlv(0x04, &key.secret);
     var b0: [16]u8 = undefined;
     var curve: Out = .{ .buf = &b0 };
     try curve.tlv(0x06, &oid_p256);
     try inner.tlv(0xA0, curve.slice());
     var bits: [66]u8 = undefined;
     bits[0] = 0;
-    bits[1..].* = key.public_key.toUncompressedSec1();
+    bits[1..].* = key.public;
     var b1: [80]u8 = undefined;
     var pub_bits: Out = .{ .buf = &b1 };
     try pub_bits.tlv(0x03, &bits);
@@ -348,18 +324,19 @@ fn writePem(path: []const u8, label: []const u8, der: []const u8) Error!void {
 
 // The key only root's to read.
 pub fn makeFiles(cert_path: []const u8, key_path: []const u8, dns_names: []const []const u8) Error!void {
-    var seed: [P256.KeyPair.seed_length]u8 = undefined;
-    defer std.crypto.secureZero(u8, &seed);
-    var key: P256.KeyPair = undefined;
+    var secret: [32]u8 = undefined;
+    defer std.crypto.secureZero(u8, &secret);
+    var key: Key = undefined;
+    defer std.crypto.secureZero(u8, &key.secret);
     while (true) {
-        zdos.randomBytes(&seed);
-        key = P256.KeyPair.generateDeterministic(seed) catch continue;
+        zdos.randomBytes(&secret);
+        key = Key.fromSecret(secret) catch continue; // 0 or past the order: again
         break;
     }
     var der: [3000]u8 = undefined;
-    const cert_der = try makeSelfSigned(key, "zdos", dns_names, &der);
+    const cert_der = try makeSelfSigned(&key, "zdos", dns_names, &der);
     var key_der_buf: [256]u8 = undefined;
-    const key_der = try sec1Der(key, &key_der_buf);
+    const key_der = try sec1Der(&key, &key_der_buf);
     defer std.crypto.secureZero(u8, &key_der_buf);
     try writePem(key_path, "EC PRIVATE KEY", key_der);
     zdos.setMode(key_path, 0o600) catch {};

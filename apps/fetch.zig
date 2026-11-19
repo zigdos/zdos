@@ -3,17 +3,13 @@
 const std = @import("std");
 const zdos = @import("zdos/zdos.zig");
 const net = @import("zdos/net.zig");
-const TlsClient = @import("vendor/zig-tls/Client.zig");
+const Tls = @import("zdos/zcrypt.zig").Tls; // ZCRYPT.ZDL
 
 comptime {
     _ = zdos;
 }
 
-// std.crypto.random (TLS's keys) from the CPU's random numbers:
-pub const std_options: std.Options = .{
-    .cryptoRandomSeed = zdos.randomBytes,
-    .crypto_always_getrandom = true,
-};
+pub const zdos_file_version = [4]u8{ 0, 6, 1, 0 };
 
 fn usage() u8 {
     zdos.print("FETCH [-o FILE] [-k] URL   (http:// or https://host[:port]/path)\n");
@@ -120,75 +116,28 @@ const Result = union(enum) {
     redirect: []const u8, // Location (in buf)
 };
 
-// std's TLS client reads and writes through the socket:
-const Stream = struct {
-    s: net.Socket,
-
-    pub const ReadError = zdos.Error;
-    pub const WriteError = zdos.Error;
-
-    pub fn readv(self: Stream, iovecs: []std.posix.iovec) ReadError!usize {
-        for (iovecs) |v| {
-            if (v.len > 0) return self.s.recv(v.base[0..v.len]);
-        }
-        return 0;
-    }
-
-    pub fn readAtLeast(self: Stream, out: []u8, len: usize) ReadError!usize {
-        var got: usize = 0;
-        while (got < len) {
-            const n = try self.s.recv(out[got..]);
-            if (n == 0) break;
-            got += n;
-        }
-        return got;
-    }
-
-    pub fn writev(self: Stream, iovecs: []const std.posix.iovec_const) WriteError!usize {
-        for (iovecs) |v| {
-            if (v.len > 0) return self.s.send(v.base[0..v.len]);
-        }
-        return 0;
-    }
-
-    pub fn writevAll(self: Stream, iovecs: []std.posix.iovec_const) WriteError!void {
-        for (iovecs) |v| try self.s.sendAll(v.base[0..v.len]);
-    }
-};
-
 const Conn = struct {
-    stream: Stream,
-    tls: ?*TlsClient,
+    s: net.Socket,
+    tls: ?Tls,
 
     fn writeAll(self: Conn, data: []const u8) !void {
-        if (self.tls) |c| return c.writeAll(self.stream, data);
-        return self.stream.s.sendAll(data);
+        if (self.tls) |c| return c.writeAll(data);
+        return self.s.sendAll(data);
     }
 
     // 0: the end.
     fn read(self: Conn, out: []u8) !usize {
-        if (self.tls) |c| return c.read(self.stream, out);
-        return self.stream.s.recv(out);
+        if (self.tls) |c| return c.read(out);
+        return self.s.recv(out);
     }
 };
-
-var tls_client: TlsClient = undefined;
 
 fn get(url: Url, out_path: ?[]const u8) !Result {
     const s = try net.Socket.connectTo(url.host, url.port);
     defer s.close();
-    var conn: Conn = .{ .stream = .{ .s = s }, .tls = null };
-    if (url.tls) {
-        const now = unixTime();
-        tls_client = try TlsClient.init(conn.stream, .{
-            .host = if (verify) .{ .explicit = url.host } else .no_verification,
-            .ca = if (verify) .{ .bundle = try certificates(now) } else .no_verification,
-            .now_sec = now,
-        });
-        // HTTP/1.0 ends the body by closing: servers often skip close_notify.
-        tls_client.allow_truncation_attacks = true;
-        conn.tls = &tls_client;
-    }
+    var conn: Conn = .{ .s = s, .tls = null };
+    if (url.tls) conn.tls = try Tls.connect(s, url.host, verify, unixTime());
+    defer if (conn.tls) |c| c.deinit();
     // HTTP/1.0: the body ends with the connection, never chunked:
     const request = std.fmt.bufPrint(&buf, "GET {s} HTTP/1.0\r\nHost: {s}\r\nUser-Agent: ZDOS-FETCH\r\nAccept: */*\r\nConnection: close\r\n\r\n", .{ url.path, url.host }) catch return error.InvalidArgument;
     try conn.writeAll(request);
@@ -241,55 +190,4 @@ fn unixTime() i64 {
     const doe = yoe * 365 + @divFloor(yoe, 4) - @divFloor(yoe, 100) + doy;
     const days = era * 146097 + doe - 719468;
     return days * 86400 + @as(i64, t.hour) * 3600 + @as(i64, t.minute) * 60 + t.second;
-}
-
-// CACERT.PEM of the boot drive (COMSPEC's):
-fn certificates(now: i64) !std.crypto.Certificate.Bundle {
-    var vb: [260]u8 = undefined;
-    const drive = if (zdos.getVar("COMSPEC", &vb)) |c| (if (c.len > 1 and c[1] == ':') c[0] else 'C') else 'C';
-    var path = "C:\\CONF\\CACERT.PEM".*;
-    path[0] = drive;
-    const f = zdos.open(&path, .read) catch return error.NoCertificates;
-    defer f.close();
-    const gpa = zdos.allocator;
-    const size: usize = @intCast(try f.size());
-    const pem = try gpa.alloc(u8, size);
-    defer gpa.free(pem);
-    var got: usize = 0;
-    while (got < size) {
-        const n = try f.read(pem[got..]);
-        if (n == 0) break;
-        got += n;
-    }
-    var bundle: std.crypto.Certificate.Bundle = .{};
-    errdefer bundle.deinit(gpa);
-    try bundle.bytes.ensureTotalCapacity(gpa, got / 4 * 3);
-    const begin = "-----BEGIN CERTIFICATE-----";
-    const end = "-----END CERTIFICATE-----";
-    var at: usize = 0;
-    var decoded: [8192]u8 = undefined;
-    while (std.mem.indexOfPos(u8, pem[0..got], at, begin)) |b| {
-        const start = b + begin.len;
-        const e = std.mem.indexOfPos(u8, pem[0..got], start, end) orelse break;
-        at = e + end.len;
-        // Base64 with line breaks: the breaks go first:
-        var clean: [12 * 1024]u8 = undefined;
-        var n: usize = 0;
-        for (pem[start..e]) |ch| {
-            if (ch == '\r' or ch == '\n' or ch == ' ' or ch == '\t') continue;
-            if (n == clean.len) break;
-            clean[n] = ch;
-            n += 1;
-        }
-        const len = std.base64.standard.Decoder.calcSizeForSlice(clean[0..n]) catch continue;
-        if (len > decoded.len) continue;
-        std.base64.standard.Decoder.decode(decoded[0..len], clean[0..n]) catch continue;
-        const decoded_start: u32 = @intCast(bundle.bytes.items.len);
-        try bundle.bytes.appendSlice(gpa, decoded[0..len]);
-        bundle.parseCert(gpa, decoded_start, now) catch {
-            bundle.bytes.items.len = decoded_start; // one it can't use: left out
-        };
-    }
-    if (bundle.map.count() == 0) return error.NoCertificates;
-    return bundle;
 }

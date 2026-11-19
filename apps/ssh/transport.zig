@@ -8,14 +8,15 @@ const net = @import("../zdos/net.zig");
 const wire = @import("wire.zig");
 const cores = @import("cores.zig");
 
-const Ed25519 = std.crypto.sign.Ed25519;
-const X25519 = std.crypto.dh.X25519;
-const Sha256 = std.crypto.hash.sha2.Sha256;
-const ChaCha = std.crypto.stream.chacha.ChaCha20With64BitNonce;
-const Poly1305 = std.crypto.onetimeauth.Poly1305;
-const Aes128Gcm = std.crypto.aead.aes_gcm.Aes128Gcm;
-const Aes256Gcm = std.crypto.aead.aes_gcm.Aes256Gcm;
-const P256 = std.crypto.sign.ecdsa.EcdsaP256Sha256;
+const zc = @import("../zdos/zcrypt.zig"); // ZCRYPT.ZDL
+const Ed25519 = zc.Ed25519;
+const X25519 = zc.X25519;
+const Sha256 = zc.Sha256;
+const ChaCha = zc.ChaCha20With64BitNonce;
+const Poly1305 = zc.Poly1305;
+const Aes128Gcm = zc.Aes128Gcm;
+const Aes256Gcm = zc.Aes256Gcm;
+const P256 = zc.EcdsaP256Sha256;
 
 pub const Msg = struct {
     pub const disconnect = 1;

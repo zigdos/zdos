@@ -1,6 +1,6 @@
 # SSH
 
-An SSH client (`SSH`, `SCP`) and server (`SSHD`), written in Zig with Zig's own cryptography (`apps/ssh/`). They need the [network](NETWORK.md) and tasks (UEFI's are cooperative: see [API](API.md#tasks-systemzig)). On CPUs without a random-number instruction (RDRAND, RNDR: PCs before 2012, the Raspberry Pi 4), keys are made from weak randomness: see the Todo.
+An SSH client (`SSH`, `SCP`) and server (`SSHD`), written in Zig (`apps/ssh/`), with Zig's cryptography from `\LIBS\ZCRYPT.ZDL`, one copy for every program. They need the [network](NETWORK.md) and tasks (UEFI's are cooperative: see [API](API.md#tasks-systemzig)). On CPUs without a random-number instruction (RDRAND, RNDR: PCs before 2012, the Raspberry Pi 4), keys are made from weak randomness: see the Todo.
 
 - Key exchange: curve25519-sha256, with OpenSSH's strict key exchange.
 - Ciphers: chacha20-poly1305@openssh.com, aes256-gcm@openssh.com, aes128-gcm@openssh.com.

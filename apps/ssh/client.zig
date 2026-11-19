@@ -10,7 +10,7 @@ const keys = @import("keys.zig");
 const cores = @import("cores.zig");
 
 const Msg = ssh.Msg;
-const Ed25519 = std.crypto.sign.Ed25519;
+const Ed25519 = @import("../zdos/zcrypt.zig").Ed25519;
 
 pub const Error = error{ AuthFailed, ChannelRefused, RequestRefused } || ssh.Error;
 

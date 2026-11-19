@@ -11,6 +11,8 @@ comptime {
     _ = zdos;
 }
 
+pub const zdos_file_version = [4]u8{ 0, 6, 1, 0 };
+
 pub const std_options: std.Options = .{
     .cryptoRandomSeed = zdos.randomBytes,
     .crypto_always_getrandom = true,
@@ -132,4 +134,3 @@ fn interactive(c: *ssh.Client, host: []const u8) ssh.Error!u8 {
     zdos.printf("Connection to {s} closed.\n", .{host});
     return @intCast(@min(c.exit_status orelse 0, 255));
 }
-

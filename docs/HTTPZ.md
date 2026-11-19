@@ -44,7 +44,7 @@ A thread per port accepts connections; a request goes to one of `WORKERS` thread
 
 ## HTTPS
 
-TLS 1.3 only (`apps/httpz/tls.zig`): key exchange by X25519 or P-256, AES-128-GCM or ChaCha20-Poly1305, ALPN `http/1.1`; no session tickets, early data or client certificates.
+TLS 1.3 only (ZCRYPT.ZDL's server, `libs/zcrypt/server.zig`): key exchange by X25519 or P-256, AES-128-GCM or ChaCha20-Poly1305, ALPN `http/1.1`; no session tickets, early data or client certificates.
 
 The certificate is a PEM file: the server's certificate, then its chain. The key is ECDSA P-256, as `EC PRIVATE KEY` or PKCS#8 `PRIVATE KEY` (what `openssl genpkey` and certbot's ECDSA keys are); RSA keys aren't supported yet. The self-signed one made at the first start (`CN=zdos`, for `localhost` and `zdos`, 10 years) makes browsers warn; replace both files with your own.
 

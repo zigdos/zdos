@@ -3,18 +3,13 @@
 const std = @import("std");
 const zdos = @import("zdos/zdos.zig");
 const net = @import("zdos/net.zig");
-const TlsClient = @import("vendor/zig-tls/Client.zig");
+const Tls = @import("zdos/zcrypt.zig").Tls; // ZCRYPT.ZDL
 
 comptime {
     _ = zdos;
 }
 
-pub const zdos_file_version = [4]u8{ 0, 8, 0, 0 };
-
-pub const std_options: std.Options = .{
-    .cryptoRandomSeed = zdos.randomBytes,
-    .crypto_always_getrandom = true,
-};
+pub const zdos_file_version = [4]u8{ 0, 8, 1, 0 };
 
 const Color = zdos.Color;
 
@@ -817,44 +812,8 @@ fn channelModes(ti: usize, m: *const Msg) void {
 }
 
 // CONNECTION
-// std's TLS client reads and writes through the socket:
-const Stream = struct {
-    s: net.Socket,
-
-    pub const ReadError = zdos.Error;
-    pub const WriteError = zdos.Error;
-
-    pub fn readv(self: Stream, iovecs: []std.posix.iovec) ReadError!usize {
-        for (iovecs) |v| {
-            if (v.len > 0) return self.s.recv(v.base[0..v.len]);
-        }
-        return 0;
-    }
-
-    pub fn readAtLeast(self: Stream, out: []u8, len: usize) ReadError!usize {
-        var got: usize = 0;
-        while (got < len) {
-            const n = try self.s.recv(out[got..]);
-            if (n == 0) break;
-            got += n;
-        }
-        return got;
-    }
-
-    pub fn writev(self: Stream, iovecs: []const std.posix.iovec_const) WriteError!usize {
-        for (iovecs) |v| {
-            if (v.len > 0) return self.s.send(v.base[0..v.len]);
-        }
-        return 0;
-    }
-
-    pub fn writevAll(self: Stream, iovecs: []std.posix.iovec_const) WriteError!void {
-        for (iovecs) |v| try self.s.sendAll(v.base[0..v.len]);
-    }
-};
-
 var sock: ?net.Socket = null;
-var tls_client: TlsClient = undefined;
+var tls: ?Tls = null;
 var inbuf: [16384]u8 = undefined;
 var inlen: usize = 0;
 var registered = false;
@@ -889,18 +848,7 @@ fn connect() !void {
     const s = try net.Socket.connectTo(host, port);
     errdefer s.close();
     s.setOption(net.SocketOption.no_delay, 1) catch {};
-    if (use_tls) {
-        const now = unixTime();
-        var bundle: std.crypto.Certificate.Bundle = .{};
-        defer bundle.deinit(zdos.allocator);
-        if (verify) bundle = try certificates(now);
-        tls_client = try TlsClient.init(Stream{ .s = s }, .{
-            .host = if (verify) .{ .explicit = host } else .no_verification,
-            .ca = if (verify) .{ .bundle = bundle } else .no_verification,
-            .now_sec = now,
-        });
-        tls_client.allow_truncation_attacks = true;
-    }
+    if (use_tls) tls = try Tls.connect(s, host, verify, unixTime());
     sock = s;
     inlen = 0;
     registered = false;
@@ -910,20 +858,16 @@ fn connect() !void {
 
 // Decrypted bytes the TLS client holds; poll can't see them:
 fn tlsPending() bool {
-    if (!use_tls or sock == null) return false;
-    return tls_client.partial_cleartext_idx < tls_client.partial_ciphertext_idx;
+    if (sock == null) return false;
+    const c = tls orelse return false;
+    return c.pending();
 }
 
 // One read, so the keys never wait for the server: 0 can be a
 // TLS record without data.
 fn netRead(out: []u8) !usize {
     const s = sock orelse return error.EndOfStream;
-    if (use_tls) {
-        var iov = [1]std.posix.iovec{.{ .base = out.ptr, .len = out.len }};
-        const n = try tls_client.readvAdvanced(Stream{ .s = s }, &iov);
-        if (n == 0 and tls_client.received_close_notify) return error.EndOfStream;
-        return n;
-    }
+    if (tls) |c| return c.readSome(out);
     const n = try s.recv(out);
     if (n == 0) return error.EndOfStream;
     return n;
@@ -932,6 +876,8 @@ fn netRead(out: []u8) !usize {
 fn lost(why: []const u8) void {
     if (sock) |s| s.close();
     sock = null;
+    if (tls) |c| c.deinit();
+    tls = null;
     registered = false;
     for (tabs[1..tab_count]) |*t| {
         t.joined = false;
@@ -953,8 +899,8 @@ fn sendRaw(line: []const u8) void {
     buf[n] = '\r';
     buf[n + 1] = '\n';
     const data = buf[0 .. n + 2];
-    const ok = if (use_tls)
-        (if (tls_client.writeAll(Stream{ .s = s }, data)) true else |_| false)
+    const ok = if (tls) |c|
+        (if (c.writeAll(data)) true else |_| false)
     else
         (if (s.sendAll(data)) true else |_| false);
     if (!ok) lost("can't send");
@@ -997,56 +943,6 @@ fn unixTime() i64 {
     const doe = yoe * 365 + @divFloor(yoe, 4) - @divFloor(yoe, 100) + doy;
     const days = era * 146097 + doe - 719468;
     return days * 86400 + @as(i64, t.hour) * 3600 + @as(i64, t.minute) * 60 + t.second;
-}
-
-// CACERT.PEM of the boot drive (COMSPEC's):
-fn certificates(now: i64) !std.crypto.Certificate.Bundle {
-    var vb: [260]u8 = undefined;
-    const drive = if (zdos.getVar("COMSPEC", &vb)) |c| (if (c.len > 1 and c[1] == ':') c[0] else 'C') else 'C';
-    var path = "C:\\CONF\\CACERT.PEM".*;
-    path[0] = drive;
-    const f = zdos.open(&path, .read) catch return error.NoCertificates;
-    defer f.close();
-    const gpa = zdos.allocator;
-    const size: usize = @intCast(try f.size());
-    const pem = try gpa.alloc(u8, size);
-    defer gpa.free(pem);
-    var got: usize = 0;
-    while (got < size) {
-        const n = try f.read(pem[got..]);
-        if (n == 0) break;
-        got += n;
-    }
-    var bundle: std.crypto.Certificate.Bundle = .{};
-    errdefer bundle.deinit(gpa);
-    try bundle.bytes.ensureTotalCapacity(gpa, got / 4 * 3);
-    const begin_mark = "-----BEGIN CERTIFICATE-----";
-    const end_mark = "-----END CERTIFICATE-----";
-    var at: usize = 0;
-    var decoded: [8192]u8 = undefined;
-    while (std.mem.indexOfPos(u8, pem[0..got], at, begin_mark)) |b| {
-        const start = b + begin_mark.len;
-        const e = std.mem.indexOfPos(u8, pem[0..got], start, end_mark) orelse break;
-        at = e + end_mark.len;
-        var clean: [12 * 1024]u8 = undefined;
-        var n: usize = 0;
-        for (pem[start..e]) |ch| {
-            if (ch == '\r' or ch == '\n' or ch == ' ' or ch == '\t') continue;
-            if (n == clean.len) break;
-            clean[n] = ch;
-            n += 1;
-        }
-        const len = std.base64.standard.Decoder.calcSizeForSlice(clean[0..n]) catch continue;
-        if (len > decoded.len) continue;
-        std.base64.standard.Decoder.decode(decoded[0..len], clean[0..n]) catch continue;
-        const decoded_start: u32 = @intCast(bundle.bytes.items.len);
-        try bundle.bytes.appendSlice(gpa, decoded[0..len]);
-        bundle.parseCert(gpa, decoded_start, now) catch {
-            bundle.bytes.items.len = decoded_start;
-        };
-    }
-    if (bundle.map.count() == 0) return error.NoCertificates;
-    return bundle;
 }
 
 // EVENTS
@@ -1430,7 +1326,7 @@ fn dateText(secs: u64, buf: []u8) []const u8 {
     const md = yd.calculateMonthDay();
     const ds = es.getDaySeconds();
     return fmtBuf(buf, "{d}-{d:0>2}-{d:0>2} {d:0>2}:{d:0>2} UTC", .{
-        yd.year,                md.month.numeric(),         md.day_index + 1,
+        yd.year,              md.month.numeric(),      md.day_index + 1,
         ds.getHoursIntoDay(), ds.getMinutesIntoHour(),
     });
 }

@@ -4,10 +4,13 @@ const std = @import("std");
 const zdos = @import("zdos/zdos.zig");
 const keys = @import("ssh/keys.zig");
 const transport = @import("ssh/transport.zig");
+const Ed25519 = @import("zdos/zcrypt.zig").Ed25519; // ZCRYPT.ZDL
 
 comptime {
     _ = zdos;
 }
+
+pub const zdos_file_version = [4]u8{ 0, 6, 1, 0 };
 
 fn usage() u8 {
     zdos.print("SSHKEY [-f FILE] [-C COMMENT]   or   SSHKEY -l FILE\n");
@@ -51,7 +54,7 @@ pub fn main(args: []const u8) u8 {
     var seed: [32]u8 = undefined;
     zdos.randomBytes(&seed);
     defer std.crypto.secureZero(u8, &seed);
-    const kp = std.crypto.sign.Ed25519.KeyPair.generateDeterministic(seed) catch return 1;
+    const kp = Ed25519.KeyPair.generateDeterministic(seed) catch return 1;
     keys.savePrivate(path, kp, who) catch |err| {
         zdos.printf("{s}: {s}\n", .{ path, @errorName(err) });
         return 1;

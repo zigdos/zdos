@@ -130,6 +130,16 @@ pub fn main(_: []const u8) u8 {
     std.crypto.pwhash.bcrypt.opensshKdf("pass", seed[0..16], &k2, 4) catch unreachable;
     check(ok_kdf and std.mem.eql(u8, &k1, &k2), "bcrypt-pbkdf");
 
+    // AES-256-CTR (their encrypted part), a counter crossing a byte:
+    var ctr_iv = [_]u8{0} ** 16;
+    ctr_iv[15] = 0xFE;
+    var ctr1: [100]u8 = undefined;
+    var ctr2: [100]u8 = undefined;
+    const ok_ctr = z.aes256_ctr(&seed, &ctr_iv, msg.ptr, &ctr1, msg.len);
+    const aes = std.crypto.core.aes.Aes256.initEnc(seed);
+    std.crypto.core.modes.ctr(@TypeOf(aes), aes, ctr2[0..msg.len], msg, ctr_iv, .big);
+    check(ok_ctr and std.mem.eql(u8, ctr1[0..msg.len], ctr2[0..msg.len]), "aes256-ctr");
+
     zdos.printf("# ZDLTEST: {d} passed, {d} failed\n", .{ passed, failed });
     return @intCast(@min(failed, 255));
 }

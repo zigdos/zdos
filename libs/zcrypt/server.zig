@@ -1,11 +1,11 @@
 // A TLS 1.3 server (RFC 8446): X25519 or P-256, AES-128-GCM or
 // ChaCha20-Poly1305, an ECDSA P-256 certificate; no client certificates,
 // tickets or early data. Kex, signature and large writes run on a free core.
+// Reads and writes through the caller's io.
 const std = @import("std");
-const zdos = @import("../zdos/zdos.zig");
-const net = @import("../zdos/net.zig");
-const cores = @import("../ssh/cores.zig");
-const cert = @import("cert.zig");
+const zdos = @import("zdos");
+const zc = zdos.zcrypt;
+const cores = @import("cores.zig");
 
 const tls = std.crypto.tls;
 const Sha256 = std.crypto.hash.sha2.Sha256;
@@ -15,8 +15,32 @@ const X25519 = std.crypto.dh.X25519;
 const P256 = std.crypto.ecc.P256;
 const Aes128Gcm = std.crypto.aead.aes_gcm.Aes128Gcm;
 const ChaCha = std.crypto.aead.chacha_poly.ChaCha20Poly1305;
+pub const Ecdsa = std.crypto.sign.ecdsa.EcdsaP256Sha256;
 
-pub const Error = error{ Closed, Protocol, Unsupported, BadRecord, TimedOut } || zdos.Error;
+pub const Error = error{ Closed, Protocol, Unsupported, BadRecord, TimedOut, ConnectionFailed };
+
+// With minimal integers: std's toDer keeps leading zero bytes (1 in 128
+// signatures), which OpenSSL refuses.
+pub fn signatureDer(sig: Ecdsa.Signature, buf: *[Ecdsa.Signature.der_encoded_length_max]u8) []const u8 {
+    var n: usize = 2;
+    for ([2]*const [32]u8{ &sig.r, &sig.s }) |v| {
+        var i: usize = 0;
+        while (i < 31 and v[i] == 0) i += 1;
+        const pad = v[i] >= 0x80;
+        buf[n] = 0x02;
+        buf[n + 1] = @intCast(32 - i + @intFromBool(pad));
+        n += 2;
+        if (pad) {
+            buf[n] = 0;
+            n += 1;
+        }
+        @memcpy(buf[n..][0 .. 32 - i], v[i..]);
+        n += 32 - i;
+    }
+    buf[0] = 0x30;
+    buf[1] = @intCast(n - 2);
+    return buf[0..n];
+}
 
 const max_plain = 1 << 14;
 const max_record = max_plain + 256;
@@ -71,7 +95,7 @@ fn seal(suite: Suite, k: *Keys, kind: u8, plain: []const u8, out: []u8) usize {
 }
 
 pub const Server = struct {
-    sock: net.Socket,
+    io: zc.TlsIo,
     suite: Suite = .aes128,
     rk: Keys = .{}, // reading
     wk: Keys = .{}, // writing
@@ -94,9 +118,20 @@ pub const Server = struct {
     fn readFull(self: *Server, buf: []u8) Error!void {
         var got: usize = 0;
         while (got < buf.len) {
-            const n = self.sock.recv(buf[got..]) catch |err| return if (err == error.WouldBlock) error.TimedOut else err;
+            const n = self.io.recv(self.io.ctx, buf[got..].ptr, buf.len - got);
+            if (n == -2) return error.TimedOut;
+            if (n < 0) return error.ConnectionFailed;
             if (n == 0) return error.Closed;
-            got += n;
+            got += @intCast(n);
+        }
+    }
+
+    fn sendAll(self: *Server, data: []const u8) Error!void {
+        var done: usize = 0;
+        while (done < data.len) {
+            const n = self.io.send(self.io.ctx, data[done..].ptr, data.len - done);
+            if (n <= 0) return error.ConnectionFailed;
+            done += @intCast(n);
         }
     }
 
@@ -131,8 +166,8 @@ pub const Server = struct {
     fn sendPlainRecord(self: *Server, kind: u8, data: []const u8) Error!void {
         var head: [5]u8 = .{ kind, 3, 3, 0, 0 };
         std.mem.writeInt(u16, head[3..5], @intCast(data.len), .big);
-        try self.sock.sendAll(&head);
-        try self.sock.sendAll(data);
+        try self.sendAll(&head);
+        try self.sendAll(data);
     }
 
     const SealJob = struct {
@@ -159,8 +194,8 @@ pub const Server = struct {
         while (i < data.len) {
             const n = @min(batch * max_plain, data.len - i);
             var job: SealJob = .{ .s = self, .kind = kind, .data = data[i .. i + n] };
-            if (n >= offload_min) cores.run(SealJob, &job, SealJob.work, false) else job.work();
-            try self.sock.sendAll(self.out[0..job.out_len]);
+            if (n >= offload_min) cores.run(SealJob, &job, SealJob.work) else job.work();
+            try self.sendAll(self.out[0..job.out_len]);
             i += n;
         }
     }
@@ -294,18 +329,19 @@ pub const Server = struct {
     };
 
     const SignJob = struct {
-        key: *const cert.P256.KeyPair,
+        key: *const Ecdsa.KeyPair,
         content: []const u8,
-        sig: [cert.P256.Signature.der_encoded_length_max]u8 = undefined,
+        sig: [Ecdsa.Signature.der_encoded_length_max]u8 = undefined,
         sig_len: usize = 0,
 
         fn work(j: *SignJob) void {
             const s = j.key.sign(j.content, null) catch return;
-            j.sig_len = cert.signatureDer(s, &j.sig).len;
+            j.sig_len = signatureDer(s, &j.sig).len;
         }
     };
 
-    pub fn handshake(self: *Server, chain: *const cert.Chain, key: *const cert.P256.KeyPair) Error!void {
+    // certs: DER, the server's first
+    pub fn handshake(self: *Server, certs: []const zc.TlsCert, key: *const Ecdsa.KeyPair) Error!void {
         errdefer self.alert(40); // handshake_failure
         var transcript = Sha256.init(.{});
 
@@ -322,7 +358,7 @@ pub const Server = struct {
         var kex: KexJob = .{ .hello = &hello, .secret = undefined };
         zdos.randomBytes(&kex.secret);
         defer std.crypto.secureZero(u8, &kex.secret);
-        cores.run(KexJob, &kex, KexJob.work, false);
+        cores.run(KexJob, &kex, KexJob.work);
         if (!kex.ok) return error.Protocol;
 
         // ServerHello:
@@ -363,7 +399,7 @@ pub const Server = struct {
         self.rk = Keys.from(self.suite, c_hs);
 
         // EncryptedExtensions, Certificate, CertificateVerify, Finished:
-        var flight: [cert.max_chain * 4 + 16 * 1024 + 512]u8 = undefined;
+        var flight: [4 * 4 + 16 * 1024 + 512]u8 = undefined;
         var f = Writer{ .buf = &flight };
         const ee_at = f.len;
         try f.add(&.{ 8, 0, 0, 0 });
@@ -380,9 +416,9 @@ pub const Server = struct {
         try f.add(&.{ 11, 0, 0, 0, 0 }); // and an empty request context
         const list_at = f.len;
         try f.add(&.{ 0, 0, 0 });
-        for (chain.certs[0..chain.count]) |der| {
-            try f.int(u24, @intCast(der.len));
-            try f.add(der);
+        for (certs) |c| {
+            try f.int(u24, @intCast(c.len));
+            try f.add(c.der[0..c.len]);
             try f.int(u16, 0);
         }
         std.mem.writeInt(u24, flight[list_at..][0..3], @intCast(f.len - list_at - 3), .big);
@@ -395,7 +431,7 @@ pub const Server = struct {
         content[97] = 0;
         content[98..130].* = transcript.peek();
         var sign: SignJob = .{ .key = key, .content = &content };
-        cores.run(SignJob, &sign, SignJob.work, false);
+        cores.run(SignJob, &sign, SignJob.work);
         if (sign.sig_len == 0) return error.Protocol;
         const cv_at = f.len;
         try f.add(&.{ 15, 0, 0, 0, 0x04, 0x03 });

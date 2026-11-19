@@ -931,32 +931,32 @@ pub fn init(stream: anytype, options: Options) InitError(@TypeOf(stream))!Client
                             },
                         };
                         const leftover = d.rest();
-                        var client: Client = .{
-                            .tls_version = tls_version,
-                            .read_seq = switch (tls_version) {
-                                .tls_1_3 => 0,
-                                .tls_1_2 => read_seq,
-                                else => unreachable,
-                            },
-                            .write_seq = switch (tls_version) {
-                                .tls_1_3 => 0,
-                                .tls_1_2 => write_seq,
-                                else => unreachable,
-                            },
-                            .partial_cleartext_idx = 0,
-                            .partial_ciphertext_idx = 0,
-                            .partial_ciphertext_end = @intCast(leftover.len),
-                            .received_close_notify = false,
-                            .allow_truncation_attacks = false,
-                            .application_cipher = app_cipher,
-                            .partially_read_buffer = undefined,
-                            .ssl_key_log = if (options.ssl_key_log_file) |key_log_file| .{
-                                .client_key_seq = key_seq,
-                                .server_key_seq = key_seq,
-                                .client_random = client_hello_rand,
-                                .file = key_log_file,
-                            } else null,
+                        // ZDOS: field by field, so no whole Client (its
+                        // record buffer) is kept as a template per suite:
+                        var client: Client = undefined;
+                        client.tls_version = tls_version;
+                        client.read_seq = switch (tls_version) {
+                            .tls_1_3 => 0,
+                            .tls_1_2 => read_seq,
+                            else => unreachable,
                         };
+                        client.write_seq = switch (tls_version) {
+                            .tls_1_3 => 0,
+                            .tls_1_2 => write_seq,
+                            else => unreachable,
+                        };
+                        client.partial_cleartext_idx = 0;
+                        client.partial_ciphertext_idx = 0;
+                        client.partial_ciphertext_end = @intCast(leftover.len);
+                        client.received_close_notify = false;
+                        client.allow_truncation_attacks = false;
+                        client.application_cipher = app_cipher;
+                        client.ssl_key_log = if (options.ssl_key_log_file) |key_log_file| .{
+                            .client_key_seq = key_seq,
+                            .server_key_seq = key_seq,
+                            .client_random = client_hello_rand,
+                            .file = key_log_file,
+                        } else null;
                         @memcpy(client.partially_read_buffer[0..leftover.len], leftover);
                         return client;
                     },

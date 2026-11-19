@@ -6,7 +6,8 @@ const zdos = @import("../zdos/zdos.zig");
 const wire = @import("wire.zig");
 const transport = @import("transport.zig");
 
-const Ed25519 = std.crypto.sign.Ed25519;
+const zc = @import("../zdos/zcrypt.zig"); // ZCRYPT.ZDL
+const Ed25519 = zc.Ed25519;
 const b64 = std.base64.standard;
 
 pub const Error = error{ BadKeyFile, NeedPassphrase, WrongPassphrase, UnsupportedKey } || wire.Error || zdos.Error;
@@ -72,12 +73,11 @@ fn parsePrivate(data: []u8, passphrase: ?[]const u8) Error!Ed25519.KeyPair {
         const rounds = o.int() catch return error.BadKeyFile;
         var key_iv: [48]u8 = undefined;
         defer std.crypto.secureZero(u8, &key_iv);
-        std.crypto.pwhash.bcrypt.opensshKdf(pass, salt, &key_iv, rounds) catch return error.BadKeyFile;
-        const aes = std.crypto.core.aes.Aes256.initEnc(key_iv[0..32].*);
+        zc.opensshKdf(pass, salt, &key_iv, rounds) catch return error.BadKeyFile;
         var tmp: [4096]u8 = undefined;
         defer std.crypto.secureZero(u8, &tmp);
         if (section.len > tmp.len) return error.BadKeyFile;
-        std.crypto.core.modes.ctr(@TypeOf(aes), aes, tmp[0..section.len], section, key_iv[32..48].*, .big);
+        zc.aes256Ctr(key_iv[0..32], key_iv[32..48], tmp[0..section.len], section) catch return error.BadKeyFile;
         @memcpy(section, tmp[0..section.len]);
     } else if (!std.mem.eql(u8, cipher, "none")) return error.UnsupportedKey;
     var s = wire.Reader.init(section);
@@ -153,7 +153,7 @@ pub fn publicLine(pk: [32]u8, comment: []const u8, buf: []u8) []const u8 {
 // "SHA256:..." as ssh-keygen -l shows it.
 pub fn fingerprint(blob: []const u8, buf: *[64]u8) []const u8 {
     var h: [32]u8 = undefined;
-    std.crypto.hash.sha2.Sha256.hash(blob, &h, .{});
+    zc.Sha256.hash(blob, &h, .{});
     @memcpy(buf[0..7], "SHA256:");
     const enc = std.base64.standard_no_pad.Encoder.encode(buf[7..], &h);
     return buf[0 .. 7 + enc.len];
