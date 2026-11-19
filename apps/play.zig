@@ -1,12 +1,16 @@
-// PLAY FILE.WAV [VOLUME]: PCM 8-32 bits or float, mono or stereo
-// 24 and 32 bits are played as 16; of more channels the first two.
+// PLAY FILE.WAV|FILE.MID [VOLUME]: PCM 8-32 bits or float, mono or
+// stereo (24 and 32 bits as 16; of more channels the first two), or
+// a MIDI file through MIDI.ZDL (MIDISYNTH=fm or sf2).
 const std = @import("std");
 const zdos = @import("zdos/zdos.zig");
 const sound = @import("zdos/sound.zig");
+const system = @import("zdos/system.zig");
 
 comptime {
     _ = zdos;
 }
+
+pub const zdos_file_version = [4]u8{ 0, 6, 0, 0 };
 
 const Format = struct {
     tag: u16 = 0, // 1 PCM, 3 float
@@ -20,9 +24,11 @@ var in_buf: [64 * 1024]u8 = undefined;
 var out_buf: [128 * 1024]u8 = undefined; // 8-bit, 3+ channels doubles
 
 pub fn main(args: []const u8) u8 {
+    system.catchCtrlC(true); // send() looks for it
+    defer system.catchCtrlC(false);
     var words = std.mem.tokenizeScalar(u8, args, ' ');
     const name = words.next() orelse {
-        zdos.print("Usage: PLAY file.wav [volume 0-100]\n");
+        zdos.print("Usage: PLAY file.wav|file.mid [volume 0-100]\n");
         return 1;
     };
     if (words.next()) |v| {
@@ -39,7 +45,8 @@ pub fn main(args: []const u8) u8 {
     defer f.close();
 
     var head: [12]u8 = undefined;
-    if (!readAll(f, &head) or !std.mem.eql(u8, head[0..4], "RIFF") or !std.mem.eql(u8, head[8..12], "WAVE")) return bad("not a WAV file");
+    if (readAll(f, head[0..4]) and std.mem.eql(u8, head[0..4], "MThd")) return playMidi(f, name);
+    if (!readAll(f, head[4..]) or !std.mem.eql(u8, head[0..4], "RIFF") or !std.mem.eql(u8, head[8..12], "WAVE")) return bad("not a WAV file");
     // Chunks up to "data", with "fmt " on the way:
     var fmt: Format = .{};
     var data_len: u64 = 0;
@@ -77,7 +84,7 @@ pub fn main(args: []const u8) u8 {
     };
     const secs = data_len / (@as(u64, fmt.rate) * fmt.block);
     zdos.printf("{s}: {d} Hz, {d} bits{s}, {s}, {d}:{d:0>2}  (Ctrl+C stops)\n", .{
-        name,                                                      fmt.rate, fmt.bits, if (fmt.tag == 3) " float" else "",
+        name,                                                                                       fmt.rate,  fmt.bits,  if (fmt.tag == 3) " float" else "",
         if (fmt.channels == 1) "mono" else if (fmt.channels == 2) "stereo" else "first 2 channels", secs / 60, secs % 60,
     });
 
@@ -91,11 +98,97 @@ pub fn main(args: []const u8) u8 {
         const whole = n - n % fmt.block;
         left -= n;
         const bytes = convert(fmt, out_channels, in_buf[0..whole]);
-        var at: usize = 0;
-        while (at < bytes.len) at += out.write(bytes[at..]) catch break;
+        switch (send(out, bytes, fmt.rate * out_channels * out_bits / 8)) {
+            .more => {},
+            .ctrl_c => return 255,
+            .failed => break,
+        }
     }
     out.close(false);
     return 0;
+}
+
+// MIDI.ZDL (ports/media/midi): exports.def's slots, typed where
+// PLAY calls them; the C convention.
+const Midi = opaque {};
+const MidiApi = extern struct {
+    slots: usize,
+    open: *const fn (c_int, ?[*:0]const u8) callconv(.c) ?*Midi,
+    open_memory: *const anyopaque,
+    close: *const fn (*Midi) callconv(.c) void,
+    synth: *const fn (*Midi) callconv(.c) c_int,
+    set_output: *const fn (*Midi, c_int, c_int) callconv(.c) c_int,
+    set_volume: *const anyopaque,
+    load: *const anyopaque,
+    load_memory: *const fn (*Midi, *const anyopaque, c_int) callconv(.c) c_int,
+    stop: *const anyopaque,
+    restart: *const anyopaque,
+    set_loop: *const anyopaque,
+    finished: *const fn (*Midi) callconv(.c) c_int,
+    length_ms: *const fn (*Midi) callconv(.c) c_uint,
+    position_ms: *const anyopaque,
+    render: *const fn (*Midi, [*]i16, c_int, c_int) callconv(.c) void,
+};
+const midi_fm = 1;
+const midi_rate = 44100;
+var midi_pcm: [2 * 4096]i16 = undefined;
+
+fn playMidi(f: zdos.File, name: []const u8) u8 {
+    const size = f.size() catch 0;
+    if (size < 14 or size > 64 << 20) return bad("not a MIDI file");
+    const data = zdos.allocator.alloc(u8, @intCast(size)) catch return bad("out of memory");
+    defer zdos.allocator.free(data);
+    f.seek(0) catch return bad("can't read the file");
+    if (!readAll(f, data)) return bad("a short file");
+
+    const lib = zdos.library(MidiApi, "MIDI") catch |err| {
+        zdos.printf("PLAY: MIDI.ZDL: {s}\n", .{zdos.message(err)});
+        return 1;
+    };
+    const m = lib.open(0, null) orelse return bad("no synthesizer (MIDI.ZDL)");
+    defer lib.close(m);
+    if (lib.set_output(m, midi_rate, 2) != 0 or lib.load_memory(m, data.ptr, @intCast(data.len)) != 0)
+        return bad("not a MIDI file PLAY can play");
+    const out = sound.open(midi_rate, 2, 16) catch |err| {
+        zdos.printf("PLAY: no sound output: {s}\n", .{zdos.message(err)});
+        return 1;
+    };
+    const secs = lib.length_ms(m) / 1000;
+    zdos.printf("{s}: MIDI, {s}, {d}:{d:0>2}  (Ctrl+C stops)\n", .{
+        name, if (lib.synth(m) == midi_fm) "FM" else "SoundFont", secs / 60, secs % 60,
+    });
+    while (lib.finished(m) == 0) {
+        lib.render(m, &midi_pcm, midi_pcm.len / 2, 0);
+        switch (send(out, std.mem.sliceAsBytes(&midi_pcm), midi_rate * 4)) {
+            .more => {},
+            .ctrl_c => return 255,
+            .failed => break,
+        }
+    }
+    out.close(false);
+    return 0;
+}
+
+// Into the card 50 ms at a time while it holds less than
+// 100 ms (less than the SB16's ring: a write doesn't wait);
+// meanwhile PLAY waits itself and looks for Ctrl+C, which
+// drops what is queued
+const Sent = enum { more, ctrl_c, failed };
+
+fn send(out: sound.Output, bytes: []const u8, per_second: usize) Sent {
+    var at: usize = 0;
+    while (at < bytes.len) {
+        while (out.queued() > per_second / 10) {
+            if (system.ctrlCPressed(true)) {
+                out.close(true);
+                return .ctrl_c;
+            }
+            zdos.sleep(10);
+        }
+        const piece = @min(bytes.len - at, @max(per_second / 20 & ~@as(usize, 3), 4));
+        at += out.write(bytes[at..][0..piece]) catch return .failed;
+    }
+    return .more;
 }
 
 // As they are, or 16-bit (and two channels).

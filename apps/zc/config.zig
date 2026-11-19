@@ -23,7 +23,7 @@ const default_text =
     \\; Enter on a file: extensions=command (%f: the file)
     \\[open]
     \\BMP,GIF,PNG,JPG,JPEG=PICTVIEW %f
-    \\WAV=PLAY %f
+    \\WAV,MID=PLAY %f
     \\ZIP=ZIP X %f
     \\TAR,TGZ,GZ,TXZ,XZ=TAR X %f
     \\
