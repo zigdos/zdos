@@ -11,6 +11,7 @@ FFMPEG_SRC=${FFMPEG_SRC:-$SRC_ROOT/FFmpeg}
 X264_SRC=${X264_SRC:-$SRC_ROOT/x264}
 MP3LAME_SRC=${MP3LAME_SRC:-$SRC_ROOT/mp3lame}
 WEBP_SRC=${WEBP_SRC:-$SRC_ROOT/libwebp}
+LIBASS_SRC=${LIBASS_SRC:-$SRC_ROOT/libass}
 TAG=n9.0.2
 BUILD=$ZIGDOS/build/ffmpeg
 [ -f "$FFMPEG_SRC/libavcodec/avcodec.h" ] || die "no FFmpeg in $FFMPEG_SRC (FFMPEG_SRC=...)"
@@ -33,6 +34,14 @@ if [ "$(cat "$SRC/.stamp" 2>/dev/null)" != "$stamp" ]; then
 fi
 red=$(cd "$SRC" && grep -rlE '\[(rsp|rstk) *- *[0-9]' --include='*.asm' libav* libsw* || true)
 [ -z "$red" ] || die "assembly using the red zone, to patch: $red"
+# The version, from RELEASE:
+IFS=. read -r v1 v2 v3 _ <"$SRC/RELEASE" || die "no version in $SRC/RELEASE"
+v1=$((10#$v1)) v2=$((10#${v2:-0})) v3=$((10#${v3:-0}))
+# ffmpeg_zdl.c's, and the tools' (cmdutils.c, patched):
+VERSION_FLAGS="-DZDOS_FFMPEG_MAJOR=$v1 -DZDOS_FFMPEG_MINOR=$v2 -DZDOS_FFMPEG_PATCH=$v3"
+printf '#define ZDOS_FFMPEG_MAJOR %d\n#define ZDOS_FFMPEG_MINOR %d\n#define ZDOS_FFMPEG_PATCH %d\n' \
+    "$v1" "$v2" "$v3" >"$BUILD/version-zdos.h"
+cmp -s "$BUILD/version-zdos.h" "$SRC/fftools/version-zdos.h" || cp "$BUILD/version-zdos.h" "$SRC/fftools/version-zdos.h"
 
 COMPONENTS=(
     --enable-decoder=h264,hevc,mpeg4,mpeg1video,mpeg2video,vp8,vp9,av1,msmpeg4v1,msmpeg4v2,msmpeg4v3,h263,mjpeg,prores,dnxhd,ffv1,huffyuv,qtrle,rawvideo,v210,v210x
@@ -51,10 +60,9 @@ COMPONENTS=(
     --enable-muxer=srt,webvtt,ass,segment,ffmetadata,image2,image2pipe,webp,yuv4mpegpipe
     --enable-filter=crop,scale,scale2ref,pad,format,colorspace,hflip,vflip,transpose,rotate,setsar,setdar,settb,setpts,trim,fps,framerate,select,split,concat,overlay,blend,fade,xfade,drawbox,drawgrid,lut,lutrgb,lutyuv,colorbalance,hue,curves,unsharp,yadif,bwdif,thumbnail,tile,palettegen,paletteuse,tpad,loop,reverse,null,color,xstack
     --enable-filter=aformat,anull,aresample,atrim,asetpts,asettb,asplit,amix,amerge,pan,atempo,volume,loudnorm,afade,acrossfade,adelay,apad,silenceremove,highpass,lowpass,equalizer,alimiter,areverse
-    #--enable-filter=drawtext,subtitles,ass
+    --enable-filter=subtitles,ass # text subtitles drawn (libass)
     --enable-protocol=file,pipe
     # --enable-libopus --enable-libvorbis
-    # --enable-libfreetype --enable-libass
 )
 
 LIBS="libavfilter/libavfilter.a libavformat/libavformat.a libavcodec/libavcodec.a libswresample/libswresample.a libswscale/libswscale.a libavutil/libavutil.a"
@@ -75,6 +83,7 @@ ln -sfn "$PORTS/include/SDL2" "$VIEW/include/SDL2"
 ln -sfn "$PORTS/include/zlib.h" "$VIEW/include/zlib.h" # PNG, APNG, compressed MOV ...
 ln -sfn "$PORTS/include/zconf.h" "$VIEW/include/zconf.h"
 ln -sfn "$PORTS/include/webp" "$VIEW/include/webp"
+ln -sfn "$PORTS/include/ass" "$VIEW/include/ass"
 mkdir -p "$VIEW/include/lame"
 ln -sfn "$MP3LAME_SRC/include/lame.h" "$VIEW/include/lame/lame.h"
 export ZDOS_SDK_PORTS=$VIEW
@@ -86,6 +95,7 @@ for arch in $(arches "$@"); do
     need_port media/mp3lame libmp3lame.a MP3LAME.ZDL
     need_port media/x264 libx264.a X264.ZDL
     need_port graphics/webp libwebpmux.a WEBP.ZDL
+    need_port libs/libass libass.a LIBASS.ZDL
     need_port graphics/SDL libSDL2.a SDL2.ZDL # for FFPLAY
     need_port libs/zlib libz.a ZLIB.ZDL
     case $arch in
@@ -133,6 +143,9 @@ for arch in $(arches "$@"); do
     done
     X264_VERSION=$(sed -n 's/^Version: *//p' "$X264_PC_SOURCE")
     [ -n "$X264_VERSION" ] || die "no x264 pkg-config metadata at $X264_PC_SOURCE"
+    LIBASS_STUBS=$PORTS/lib/$arch/libass.a
+    LIBASS_VERSION=$(cat "$LIBASS_SRC/RELEASEVERSION" 2>/dev/null)
+    [ -n "$LIBASS_VERSION" ] || die "no libass version in $LIBASS_SRC/RELEASEVERSION"
 
     obj=$BUILD/$arch
     mkdir -p "$obj"
@@ -171,8 +184,20 @@ Version: $WEBP_VERSION
 Libs: -L\${libdir} -lwebpmux -lwebp
 Cflags: -I\${includedir}
 EOF
+    # Its headers are in the view (ZDOS_SDK_PORTS); FREETYPE.ZDL,
+    # HARFBUZZ.ZDL and SHNBIDI.ZDL are LIBASS.ZDL's own imports:
+    cat >"$PKGDIR/libass.pc" <<EOF
+prefix=$PORTS
+libdir=\${prefix}/lib/$arch
+
+Name: libass
+Description: ASS/SSA subtitle renderer for ZDOS
+Version: $LIBASS_VERSION
+Libs: -L\${libdir} -lass
+Cflags:
+EOF
     cd "$obj"
-    flags="$ffarch x264-$X264_VERSION lame-$LAME_VERSION webp-$WEBP_VERSION --enable-gpl --enable-libx264 --enable-libmp3lame --enable-libwebp --enable-zlib ${COMPONENTS[*]}"
+    flags="$ffarch x264-$X264_VERSION lame-$LAME_VERSION webp-$WEBP_VERSION libass-$LIBASS_VERSION --enable-gpl --enable-libx264 --enable-libmp3lame --enable-libwebp --enable-libass --enable-zlib ${COMPONENTS[*]}"
     if [ ! -f ffbuild/config.mak ] || [ "$(cat .flags 2>/dev/null)" != "$flags" ]; then
         echo "=== configure for $arch ==="
         # sdl2-config for ffplay:
@@ -182,7 +207,7 @@ EOF
             --ar="$SDK/bin/zdos-ar" --ranlib="$SDK/bin/zdos-ranlib" --nm=nm --strip=true --pkg-config=pkg-config \
             --disable-doc --disable-debug --disable-network --disable-autodetect \
             --disable-everything --disable-avdevice --enable-static --disable-shared --enable-pthreads \
-            --enable-sdl2 --enable-gpl --enable-libx264 --enable-libmp3lame --enable-libwebp --enable-zlib "${COMPONENTS[@]}" >configure.log ||
+            --enable-sdl2 --enable-gpl --enable-libx264 --enable-libmp3lame --enable-libwebp --enable-libass --enable-zlib "${COMPONENTS[@]}" >configure.log ||
             die "configure failed: $obj/ffbuild/config.log"
         echo "$flags" >.flags
     fi
@@ -216,11 +241,11 @@ EOF
          copying && /^};/ { exit }' "$X264_SRC/common/tables.c" >>x264_levels.inc
     grep -q '^const x264_level_t x264_levels\[\]' x264_levels.inc ||
         die "could not extract x264_levels from $X264_SRC/common/tables.c"
-    $CC -O2 -I. -I"$PORTS/include" -I"$ZIGDOS/build/x264/$arch" -I"$X264_SRC" \
+    $CC -O2 $VERSION_FLAGS -I. -I"$PORTS/include" -I"$ZIGDOS/build/x264/$arch" -I"$X264_SRC" \
         -I"$PORT" -c "$PORT/ffmpeg_zdl.c" -o zdl/ffmpeg_zdl.o
     # --gc-sections: of the C library and runtime only what is used:
     $CC zdl/ffmpeg_zdl.o -Wl,--start-group $LIBS "$X264_STUBS" "$LAME_STUBS" \
-        "$WEBP_STUBS" "$WEBP_MUX_STUBS" "$PORTS/lib/$arch/libz.a" \
+        "$WEBP_STUBS" "$WEBP_MUX_STUBS" "$LIBASS_STUBS" "$PORTS/lib/$arch/libz.a" \
         -Wl,--end-group -Wl,--gc-sections -o FFMPEG9.ZDL
     # ZDOS relocates only relative (the assembly must not add others):
     other=$(readelf -r --wide FFMPEG9.elf | awk '/^[0-9a-f]+ / && $3 !~ /_RELATIVE$/ { print $3 }' | sort | uniq -c)

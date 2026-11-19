@@ -1,6 +1,6 @@
-/* FFMPEG9.ZDL's export table, in order (slot 1 first): the functions of
- * FFmpeg n9.0.2's export maps (libavutil/libavutil.v and the others; no avpriv_ ones), sorted. Only
- * ever add at the end. */
+/* FFMPEG9.ZDL's export table, in order (slot 1 first): the functions
+ * of FFmpeg n9.0.2's export maps, sorted, without avpriv_ ones
+ * (libavutil/libavutil.v and the others). Only ever add at the end. */
 X(av_ac3_parse_header)
 X(av_add_i)
 X(av_add_index_entry)

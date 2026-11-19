@@ -7,11 +7,15 @@ ports/media/ffmpeg/build.sh            # all three CPUs (builds SDL 2 first if m
 zig build                              # puts them onto drive C:
 ```
 
-Sources: FFmpeg's git clone in `$ZDOS_PORTS_SRC/FFmpeg` (`../FFmpeg` when that variable is unset; `FFMPEG_SRC=...`); `build.sh` exports its tag `n9.0.2` into `build/ffmpeg/src` (the clone's checkout is not touched). A release tree works too. Objects: `build/ffmpeg/<arch>/`, where FFmpeg's `configure` runs. About 25 s on 16 cores; 1 min with `configure`.
+Sources: FFmpeg's git clone in `$ZDOS_PORTS_SRC/FFmpeg` (`../FFmpeg` when that variable is unset; `FFMPEG_SRC=...`); `build.sh` exports its tag `n9.0.2` into `build/ffmpeg/src` (the clone's checkout is not touched). A release tree works too. Objects: `build/ffmpeg/<arch>/`, where FFmpeg's `configure` runs. About 25 s on 16 cores; 1 min with `configure`. The version for ZDOS is taken from `RELEASE`.
 
 ## How it is made
 
-- FFmpeg's own `configure` and `make`, `zdos-cc` as the compiler (`--target-os=none --enable-cross-compile`), static libraries. The sources are unchanged but for `ffmpeg-zdos.patch`: on x86-64 two pieces of assembly kept data below the stack pointer (the red zone: H.264's intra deblocking, swresample's resampler), where ZDOS's interrupts write (the reason for `-mno-red-zone`); it gave H.264 wrong pixels now and then. They get stack space instead. `build.sh` stops if another such piece appears. In ffplay it also offers yuv420p first: SDL's software renderer lists only RGB formats, so ffplay converted every frame with swscale (C, "No accelerated colorspace conversion"); SDL takes YUV textures anyway and converts them with SSE2 on x86-64.
+- FFmpeg's own `configure` and `make`, `zdos-cc` as the compiler (`--target-os=none --enable-cross-compile`), static libraries.
+- `ffmpeg-zdos.patch`, the only change to the sources:
+  - x86-64: two pieces of assembly (H.264's intra deblocking, swresample's resampler) kept data in the red zone below the stack pointer, where ZDOS's interrupts write; they get stack space instead. `build.sh` stops if another such piece appears.
+  - ffplay offers yuv420p first, so SDL converts its frames with SSE2 instead of ffplay with swscale in C.
+  - The `subtitles` filter finds fonts through libass's provider of `C:\SYSTEM\TTF` (`Arimo-Regular.ttf` for what no font has) and keeps a file's track and fonts for the next filter of the same file: ffplay builds its filters anew after every seek.
 - `FFMPEG9.ZDL`: `ffmpeg_zdl.c` (the export table) linked with libavfilter, libavformat, libavcodec, libswresample, libswscale and libavutil (`--gc-sections`).
 - The table: the functions FFmpeg's export maps make public (`libavcodec/libavcodec.v` ...: `av*`, `avcodec_*`, `sws_*`, `swr_*` ...), without the libraries' private `avpriv_*`, in the order of `exports.def` (sorted when made, 1023 functions). It only grows at its end: `build.sh` stops when the libraries have a public function `exports.def` lacks; append it there.
 - Data can't be imported (the table holds functions): the exported constants `av_aes_size`, `av_md5_size`, `av_sha_size` ... (the `av_*_size` of the hash and cipher modules) and the version strings `av_*_ffversion`, `swr_ffversion` are not reachable from programs; the tools use none of them. `av_*_alloc` of those modules works.
@@ -46,7 +50,7 @@ FFPLAY -autoexit VIDEO.MP4             # in a tab of its own, with sound
 - x86-64 tested (metal under KVM). x86 and ARM64 build (`build.sh x86 arm64`: same table, only relative relocations), not run yet.
 - No network protocols, no hardware decoding.
 - Sound with more channels (AC-3 5.1) is mixed down to stereo: ZDOS's SDL opens at most two channels, ffplay's swresample converts.
-- `FFPLAY` shows only bitmap subtitles (DVD, PGS): text ones (SubRip, ASS) are decoded but drawing them needs FFmpeg's `subtitles` filter with libass and FreeType, not ported. `FFMPEG` writes them out (`-c:s srt`, WebVTT, ASS).
+- `FFPLAY` shows only bitmap subtitles (DVD, PGS): text ones (SubRip, ASS) are decoded but drawing them needs FFmpeg's `subtitles` filter with libass and FreeType, which the GPL build has ([ffmpeg264](../ffmpeg264/README.md)). `FFMPEG` writes them out (`-c:s srt`, WebVTT, ASS).
 - FFmpeg's `FILE` streams and descriptors are the library's own (a copy of the C library inside): `pipe:0` / `pipe:1` are the program's standard input and output all the same, as ZDOS gives both copies the same ones.
 - `FFPLAY` draws through SDL's software renderer ("Failed to initialize a hardware accelerated renderer" is SDL's first try); yuv420p frames go to it as they are (SDL converts them, SSE2 on x86-64), others through swscale first.
 - Without `-c` FFmpeg takes the format's default encoder, which this build lacks for MP4, MOV, MKV and MP3 (H.264, MP3), WebM (VP9), Ogg (Theora): name one (`-c:v mpeg4`, `-c:a aac`). Vorbis and Opus encoders are FFmpeg's experimental ones: `-strict -2`.

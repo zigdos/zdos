@@ -100,3 +100,142 @@
  
      while ((e = av_dict_iterate(sws_dict, e))) {
          if (!strcmp(e->key, "sws_flags")) {
+--- a/libavfilter/vf_subtitles.c
++++ b/libavfilter/vf_subtitles.c
+@@ -28,6 +28,7 @@
+  */
+ 
+ #include <ass/ass.h>
++#include <string.h>
+ 
+ #include "config_components.h"
+ #if CONFIG_SUBTITLES_FILTER
+@@ -58,6 +59,7 @@
+     char *charenc;
+     char *force_style;
+     int stream_index;
++    char *zdos_key;
+     int alpha;
+     uint8_t rgba_map[4];
+     int     pix_step[4];       ///< steps per pixel for each plane of the main output
+@@ -162,10 +164,51 @@
+     return 0;
+ }
+ 
++/* ZDOS: ffplay builds its filters anew after every seek. What the last
++   subtitles filter had (the library, with its fonts and styles, the track
++   and the renderer, with its fonts chosen and glyphs drawn) is kept for
++   the next one of the same file and options, which would otherwise read
++   the whole file and look the fonts up again. */
++static struct {
++    char *key;
++    ASS_Library *library;
++    ASS_Track *track;
++    ASS_Renderer *renderer;
++} kept;
++
++static void drop_kept(void)
++{
++    if (kept.track)
++        ass_free_track(kept.track);
++    if (kept.renderer)
++        ass_renderer_done(kept.renderer);
++    if (kept.library)
++        ass_library_done(kept.library);
++    av_freep(&kept.key);
++    kept.track = NULL;
++    kept.renderer = NULL;
++    kept.library = NULL;
++}
++
+ static av_cold void uninit(AVFilterContext *ctx)
+ {
+     AssContext *ass = ctx->priv;
+ 
++    if (ass->zdos_key && ass->library && ass->track && ass->renderer) {
++        drop_kept();
++        /* Its messages go nowhere until another filter takes it: */
++        ass_set_message_cb(ass->library, ass_log, NULL);
++        kept.key = ass->zdos_key;
++        kept.library = ass->library;
++        kept.track = ass->track;
++        kept.renderer = ass->renderer;
++        ass->zdos_key = NULL;
++        ass->library = NULL;
++        ass->track = NULL;
++        ass->renderer = NULL;
++        return;
++    }
++    av_freep(&ass->zdos_key);
+     if (ass->track)
+         ass_free_track(ass->track);
+     if (ass->renderer)
+@@ -302,7 +345,10 @@
+         return ret;
+ 
+     /* Initialize fonts */
+-    ass_set_fonts(ass->renderer, NULL, NULL, 1, NULL, 1);
++    /* ZDOS: libass's provider of C:\SYSTEM\TTF (Arial is Arimo there);
++       what no font has, Arimo */
++    ass_set_fonts(ass->renderer, "C:/SYSTEM/TTF/Arimo-Regular.ttf", "Arimo",
++                  ASS_FONTPROVIDER_AUTODETECT, NULL, 1);
+ 
+     return read_track(ctx);
+ }
+@@ -396,6 +442,26 @@
+         return AVERROR(EINVAL);
+     }
+ 
++    /* ZDOS: the same file and options as the last one: what it read */
++    ass->zdos_key = av_asprintf("%s|%d|%s|%s|%s", ass->filename, ass->stream_index,
++                                ass->charenc ? ass->charenc : "",
++                                ass->force_style ? ass->force_style : "",
++                                ass->fontsdir ? ass->fontsdir : "");
++    if (!ass->zdos_key)
++        return AVERROR(ENOMEM);
++    if (kept.key && !strcmp(kept.key, ass->zdos_key)) {
++        ass->library = kept.library;
++        ass->track = kept.track;
++        ass->renderer = kept.renderer;
++        kept.library = NULL;
++        kept.track = NULL;
++        kept.renderer = NULL;
++        av_freep(&kept.key);
++        ass_set_message_cb(ass->library, ass_log, ctx);
++        return 0;
++    }
++    drop_kept();
++
+     /* Init libass */
+     ret = init(ctx);
+     if (ret < 0)
+@@ -465,7 +531,10 @@
+     }
+ 
+     /* Initialize fonts */
+-    ass_set_fonts(ass->renderer, NULL, NULL, 1, NULL, 1);
++    /* ZDOS: libass's provider of C:\SYSTEM\TTF (Arial is Arimo there);
++       what no font has, Arimo */
++    ass_set_fonts(ass->renderer, "C:/SYSTEM/TTF/Arimo-Regular.ttf", "Arimo",
++                  ASS_FONTPROVIDER_AUTODETECT, NULL, 1);
+ 
+     /* Open decoder */
+     dec = avcodec_find_decoder(st->codecpar->codec_id);
+--- a/fftools/cmdutils.c
++++ b/fftools/cmdutils.c
+@@ -48,6 +48,15 @@
+ #include "cmdutils.h"
+ #include "fopen_utf8.h"
+ #include "opt_common.h"
++#ifdef __zdos__
++/* The tools' version for ZDOS: RELEASE's (build.sh), expanded
++ * before ZDOS_FILE_VERSION's # */
++#include "version-zdos.h"
++#include "zdos.h"
++#define FF_FILE_VERSION(a, b, c) ZDOS_FILE_VERSION(a, b, c, 0)
++#define FF_FILE_VERSION_OF(a, b, c) FF_FILE_VERSION(a, b, c)
++FF_FILE_VERSION_OF(ZDOS_FFMPEG_MAJOR, ZDOS_FFMPEG_MINOR, ZDOS_FFMPEG_PATCH);
++#endif
+ #ifdef _WIN32
+ #include <windows.h>
+ #include "compat/w32dlfcn.h"

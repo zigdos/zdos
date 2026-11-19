@@ -31,6 +31,14 @@ if [ "$(cat "$SRC/.stamp" 2>/dev/null)" != "$stamp" ]; then
 fi
 red=$(cd "$SRC" && grep -rlE '\[(rsp|rstk) *- *[0-9]' --include='*.asm' libav* libsw* || true)
 [ -z "$red" ] || die "assembly using the red zone, to patch: $red"
+# The version, from RELEASE:
+IFS=. read -r v1 v2 v3 _ <"$SRC/RELEASE" || die "no version in $SRC/RELEASE"
+v1=$((10#$v1)) v2=$((10#${v2:-0})) v3=$((10#${v3:-0}))
+# ffmpeg_zdl.c's, and the tools' (cmdutils.c, patched):
+VERSION_FLAGS="-DZDOS_FFMPEG_MAJOR=$v1 -DZDOS_FFMPEG_MINOR=$v2 -DZDOS_FFMPEG_PATCH=$v3"
+printf '#define ZDOS_FFMPEG_MAJOR %d\n#define ZDOS_FFMPEG_MINOR %d\n#define ZDOS_FFMPEG_PATCH %d\n' \
+    "$v1" "$v2" "$v3" >"$BUILD/version-zdos.h"
+cmp -s "$BUILD/version-zdos.h" "$SRC/fftools/version-zdos.h" || cp "$BUILD/version-zdos.h" "$SRC/fftools/version-zdos.h"
 
 COMPONENTS=(
     --enable-decoder=h264,hevc,mpeg4,mpeg1video,mpeg2video,vp8,vp9,av1,msmpeg4v1,msmpeg4v2,msmpeg4v3,h263,mjpeg,prores,dnxhd,ffv1,huffyuv,qtrle,rawvideo,v210,v210x
@@ -113,7 +121,7 @@ for arch in $(arches "$@"); do
 
     echo "=== FFMPEG9.ZDL for $arch ==="
     mkdir -p zdl
-    $CC -O2 -I"$PORT" -c "$PORT/ffmpeg_zdl.c" -o zdl/ffmpeg_zdl.o
+    $CC -O2 $VERSION_FLAGS -I"$PORT" -c "$PORT/ffmpeg_zdl.c" -o zdl/ffmpeg_zdl.o
     # --gc-sections: of the C library and runtime only what is used:
     $CC zdl/ffmpeg_zdl.o -Wl,--start-group $LIBS "$PORTS/lib/$arch/libz.a" -Wl,--end-group -Wl,--gc-sections -o FFMPEG9.ZDL
     # ZDOS relocates only relative (the assembly must not add others):

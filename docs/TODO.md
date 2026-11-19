@@ -64,7 +64,7 @@
 - [ ] SQLite: WAL (shared memory).
 - [ ] `SDL2.ZDL` testing.
 - [ ] TinyGL / PortableGL: several cores, a 16-bit TinyGL for BIOS, PortableGL demos: nuklear or models - under question.
-- [ ] FFmpeg: text subtitles in ffplay (libass, FreeType), encoders.
+- [x] FFmpeg: text subtitles in ffplay (libass, FreeType), encoders.
 - [ ] DOSBox: MIDI device, x86, arm64 and the recompilers check.
 - [ ] MicroPython build folder as for other ports; now builds inside its repo.
 - [ ] Quake II (yquake2) - under question.
