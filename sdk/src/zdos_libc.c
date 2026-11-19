@@ -31,6 +31,7 @@
 static int zdos_errno;
 bool zdos_threads_started;
 const zdos_runtime *zdos_runtime_host;
+bool zdos_library_one_copy;
 void (*zdos_vfork_exit_hook)(int status);
 
 /* FUTEXES AND LOCK WORDS (pthreads, streams, guards) */
@@ -1414,6 +1415,9 @@ char *getenv(const char *name) {
         zdos->programs->get_var(name, name_len, value, (size_t)n);
     }
     value[n] = '\0';
+    if (zdos_library_one_copy) {
+        return value; /* the caller's memory: no cache other programs see */
+    }
     for (env_entry *e = env_cache; e != NULL; e = e->next) {
         if (strcmp(e->name, name) == 0 && strcmp(e->value, value) == 0) {
             free(value);

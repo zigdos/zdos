@@ -55,6 +55,9 @@ typedef struct zdos_runtime {
 } zdos_runtime;
 extern const zdos_runtime zdos_runtime_offer; /* zdos_posix.c */
 extern const zdos_runtime *zdos_runtime_host; /* zdos_libc.c; NULL in programs */
+/* A shared library (zdos_library_shared), one copy for every program: it
+   has no host, and keeps nothing in a program's memory (zdos_libc.c) */
+extern bool zdos_library_one_copy;
 
 /* thread_local blocks (zdos_tls.c): a thread's own, made and set */
 void *zdos_tls_start(void);

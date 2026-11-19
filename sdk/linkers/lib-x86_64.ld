@@ -8,6 +8,7 @@ SECTIONS
     . = 0;
 
     .header : {
+        __zdos_header = .;  /* zdos_libinit.c reads the flags */
         LONG(0x364C445A)    /* magic "ZDL6" */
         LONG(DEFINED(zdos_api_version) ? zdos_api_version : 1)  /* API version needed */
         LONG(DEFINED(zdos_file_version) ? zdos_file_version : 0)  /* major.minor.patch.build */

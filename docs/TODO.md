@@ -9,7 +9,7 @@
 - [ ] Random bytes from ZDOS where the CPU has no RDRAND.
 - [ ] Timezones support.
 - [ ] ACPI power off and restart on Metal and BIOS without APM.
-- [ ] Shared library code.
+- [x] Shared library code (partial).
 - [ ] Virtual consoles and terminals (tty).
 - [ ] Serial ports for programs (`COM1`), with the UART's interrupt.
 - [ ] Event queue filters - under question.

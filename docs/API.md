@@ -237,7 +237,7 @@ Jobs on the other cores (group `cores`), sharing the program's memory. A job mus
 - **Shared** (`export const zdos_library_shared`): one copy for every program, so no changing global state; callers pass their memory. **Per program** (default): a copy each, for libraries with globals.
 - `zdos_library_init(start)`, if exported, runs once per load.
 - **Import stubs** let C programs call a library's functions by name: `sdk/bin/zdos-stubs`. Making a library, in C or Zig: [ZDL.md](ZDL.md).
-- A C library has its own copy of the C library: its descriptors, `FILE` streams and `atexit` are its own, so it must be per program; `malloc` / `free` and threads are shared with the program.
+- A C library has its own copy of the C library: its descriptors, `FILE` streams and `atexit` are its own; `malloc` / `free` are the program's. Per program, threads and `errno` are the program's too; a shared one opens files through ZDOS's handles, not `FILE` streams ([ZDL.md](ZDL.md)).
 
 ## Drivers (.SYS)
 

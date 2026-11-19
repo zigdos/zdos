@@ -9,7 +9,7 @@ A program asks for `NAME.ZDL` by name; ZDOS looks in the program's folder, then 
 - **Per program** (the default): each program that loads it gets its own copy, with its own global variables.
 - **Shared**: one copy for every program, for libraries without changing global state (callers pass their own memory). The library says so by defining the symbol `zdos_library_shared`.
 
-A C library carries its own copy of the C library (its file descriptors, `FILE` streams), so it stays per program. `malloc` / `free`, threads, `errno` and signal handlers are the program's: memory may be freed on either side.
+A C library carries its own copy of the C library (its file descriptors, `FILE` streams). Per program, `malloc` / `free`, threads, `errno` and signal handlers are the program's: memory may be freed on either side. A shared C library still allocates in the calling program's memory, but has its own `errno` and threads, and opens files through ZDOS's handles (`zdos->files`), not `FILE` streams, which all programs would share.
 
 ## The table only grows
 
