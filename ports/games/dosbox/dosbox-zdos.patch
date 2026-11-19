@@ -12,14 +12,15 @@
  #define CROSS_FILESPLIT '/'
 --- a/src/cpu/core_dyn_x86/risc_x86.h
 +++ b/src/cpu/core_dyn_x86/risc_x86.h
-@@ -128,6 +128,24 @@
+@@ -128,6 +128,25 @@
  		:"%edx","%edi","%esi","cc","memory"
  	);
  	reg_flags=(reg_flags & ~FMASK_TEST) | (tempflags & FMASK_TEST);
 +#elif defined(__zdos__)
 +	// ZDOS programs are position independent: the return address from
-+	// call/pop instead of an absolute one
-+	register Bit32u tempflags=reg_flags & FMASK_TEST;
++	// call/pop instead of an absolute one. They run in ring 0, where
++	// the blocks' POPFD sets IF too: kept on, interrupts keep coming
++	register Bit32u tempflags=(reg_flags & FMASK_TEST) | FLAG_IF;
 +	__asm__ volatile (
 +		"pushl %%ebp						\n"
 +		"call 1f							\n"
@@ -63,7 +64,23 @@
  		if((len > 1) && (work[len-1] == CROSS_FILESPLIT )) {
 --- a/src/gui/sdlmain.cpp
 +++ b/src/gui/sdlmain.cpp
-@@ -1634,7 +1634,12 @@
+@@ -51,6 +51,15 @@
+ #include "cross.h"
+ #include "control.h"
+ 
++#ifdef __zdos__
++/* The version for ZDOS: configure.ac's (build.sh), expanded before
++   ZDOS_FILE_VERSION's # */
++#include "zdos.h"
++#define DOSBOX_FILE_VERSION(a, b, c) ZDOS_FILE_VERSION(a, b, c, 0)
++#define DOSBOX_FILE_VERSION_OF(a, b, c) DOSBOX_FILE_VERSION(a, b, c)
++DOSBOX_FILE_VERSION_OF(DOSBOX_VERSION_MAJOR, DOSBOX_VERSION_MINOR, DOSBOX_VERSION_PATCH);
++#endif
++
+ #define MAPPERFILE "mapper-" VERSION ".map"
+ //#define DISABLE_JOYSTICK
+ 
+@@ -1634,7 +1643,12 @@
  	Prop_int* Pint;
  	Prop_multival* Pmulti;
  
@@ -76,7 +93,7 @@
  	Pbool->Set_help("Start dosbox directly in fullscreen. (Press ALT-Enter to go back)");
       
  	Pbool = sdl_sec->Add_bool("fulldouble",Property::Changeable::Always,false);
-@@ -1693,7 +1698,12 @@
+@@ -1693,7 +1707,12 @@
  	Pstring = sdl_sec->Add_path("mapperfile",Property::Changeable::Always,MAPPERFILE);
  	Pstring->Set_help("File used to load/save the key/event mappings from. Resetmapper only works with the defaul value.");
  
@@ -180,3 +197,42 @@
  
  #if (C_DYNAMIC_X86)
  		CPU_Core_Dyn_X86_Cache_Init((core == "dynamic") || (core == "dynamic_nodhfpu"));
+--- a/src/cpu/core_dyn_x86.cpp
++++ b/src/cpu/core_dyn_x86.cpp
+@@ -188,6 +188,9 @@
+ static void dyn_flags_host_to_gen(void) {
+ 	gen_dop_word(DOP_MOV,true,DREG(EXIT),DREG(FLAGS));
+ 	gen_dop_word_imm(DOP_AND,true,DREG(EXIT),FMASK_TEST);
++#if defined(__zdos__)
++	gen_dop_word_imm(DOP_OR,true,DREG(EXIT),FLAG_IF);	// ring 0: see gen_runcode
++#endif
+ 	gen_load_flags(DREG(EXIT));
+ 	gen_releasereg(DREG(EXIT));
+ 	gen_releasereg(DREG(FLAGS));
+--- a/src/gui/midi.cpp
++++ b/src/gui/midi.cpp
+@@ -86,6 +86,10 @@
+ 
+ #include "midi_win32.h"
+ 
++#elif defined (__zdos__)
++
++#include "midi_zdos.h"
++
+ #else
+ 
+ #include "midi_oss.h"
+--- a/src/dosbox.cpp
++++ b/src/dosbox.cpp
+@@ -543,7 +543,11 @@
+ 	
+ 	const char* mputypes[] = { "intelligent", "uart", "none",0};
+ 	// FIXME: add some way to offer the actually available choices.
++#ifdef __zdos__
++	const char *devices[] = { "default", "zdos", "none", 0}; /* gui/midi_zdos.h */
++#else
+ 	const char *devices[] = { "default", "win32", "alsa", "oss", "coreaudio", "coremidi","none", 0};
++#endif
+ 	Pstring = secprop->Add_string("mpu401",Property::Changeable::WhenIdle,"intelligent");
+ 	Pstring->Set_values(mputypes);
+ 	Pstring->Set_help("Type of MPU-401 to emulate.");

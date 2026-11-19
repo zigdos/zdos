@@ -26,6 +26,17 @@ if [ $stale = 1 ]; then
 fi
 # dosbox.h includes it:
 cmp -s "$PORT/config.h" "$TREE/include/config.h" || cp -p "$PORT/config.h" "$TREE/include/config.h"
+# midi.cpp includes it (the patch):
+cmp -s "$PORT/midi_zdos.h" "$TREE/src/gui/midi_zdos.h" || cp -p "$PORT/midi_zdos.h" "$TREE/src/gui/midi_zdos.h"
+# The version, from configure.ac's AC_INIT (0.74-3: 0.74.3):
+ver=$(sed -n 's/^AC_INIT(dosbox, *\([0-9][0-9.-]*\)).*/\1/p' "$DOSBOX_SRC/configure.ac")
+[ -n "$ver" ] || die "no version in $DOSBOX_SRC/configure.ac"
+IFS=.- read -r v1 v2 v3 _ <<EOF
+$ver
+EOF
+printf '#define VERSION "%s"\n#define DOSBOX_VERSION_MAJOR %d\n#define DOSBOX_VERSION_MINOR %d\n#define DOSBOX_VERSION_PATCH %d\n' \
+    "$ver" "$((10#$v1))" "$((10#${v2:-0}))" "$((10#${v3:-0}))" >"$BUILD/version-zdos.h"
+cmp -s "$BUILD/version-zdos.h" "$TREE/include/version-zdos.h" || cp "$BUILD/version-zdos.h" "$TREE/include/version-zdos.h"
 
 # Makefile.am's sources (what isn't configured compiles to nothing):
 S=src
@@ -54,6 +65,7 @@ CFLAGS="-O2 -w -std=gnu++98 -fno-strict-aliasing"
 for arch in $(arches "$@"); do
     select_arch "$arch"
     [ -f "$ZIGDOS/build/sdk-ports/lib/$arch/libSDL.a" ] || "$ZIGDOS/ports/graphics/sdl12/build.sh" "$arch"
+    need_port media/midi libMIDI.a MIDI.ZDL
     obj=$BUILD/$arch
     echo "=== DOSBOX.APP for $arch ==="
     objs=()
@@ -62,7 +74,7 @@ for arch in $(arches "$@"); do
         o=$obj/${s#src/}
         o=${o%.*}.o
         objs+=("$o")
-        [ "$o" -nt "$TREE/$s" ] && [ "$o" -nt "$TREE/include/config.h" ] && [ "$o" -nt "$PORT/dosbox-zdos.patch" ] && continue
+        [ "$o" -nt "$TREE/$s" ] && [ "$o" -nt "$TREE/include/config.h" ] && [ "$o" -nt "$TREE/include/version-zdos.h" ] && [ "$o" -nt "$TREE/src/gui/midi_zdos.h" ] && [ "$o" -nt "$PORT/dosbox-zdos.patch" ] && continue
         mkdir -p "$(dirname "$o")"
         ${CC/zdos-cc/zdos-c++} $CFLAGS $INCLUDES -I"$(dirname "$TREE/$s")" -c "$TREE/$s" -o "$o" &
         pids+=($!)
@@ -72,6 +84,6 @@ for arch in $(arches "$@"); do
         fi
     done
     for p in ${pids[@]+"${pids[@]}"}; do wait "$p" || die "compiling failed"; done
-    ${CC/zdos-cc/zdos-c++} "${objs[@]}" -lSDL -o "$obj/dosbox.app"
+    ${CC/zdos-cc/zdos-c++} "${objs[@]}" -lSDL -lMIDI -o "$obj/dosbox.app"
     install_app "$obj/dosbox.app" GAMES DOSBOX.APP
 done

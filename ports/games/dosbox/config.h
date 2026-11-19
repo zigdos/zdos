@@ -4,7 +4,7 @@
    debugger, OpenGL, SDL_net, SDL_sound, screenshots (libpng). C_HEAVY_DEBUG
    and C_SDL_SOUND stay undefined: sources test them with #ifdef */
 #define PACKAGE "dosbox"
-#define VERSION "0.74-3"
+#include "version-zdos.h" /* VERSION, from configure.ac (build.sh) */
 
 #define C_DEBUG 0
 #define C_OPENGL 0

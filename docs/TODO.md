@@ -65,7 +65,7 @@
 - [ ] `SDL2.ZDL` testing.
 - [ ] TinyGL / PortableGL: several cores, a 16-bit TinyGL for BIOS, PortableGL demos: nuklear or models - under question.
 - [x] FFmpeg: text subtitles in ffplay (libass, FreeType), encoders.
-- [ ] DOSBox: MIDI device, x86, arm64 and the recompilers check.
+- [x] DOSBox: MIDI device.
 - [ ] MicroPython build folder as for other ports; now builds inside its repo.
 - [ ] Quake II (yquake2) - under question.
 - [ ] From Minix / BSD: curses, terminfo, nvi, less, more; tr, tee, seq, paste, join, split, fold, fmt, column, comm, cmp, rev, nl ... as ash built-ins or programs; bzip2, xz, libarchive, libedit.
