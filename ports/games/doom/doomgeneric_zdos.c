@@ -19,6 +19,12 @@
 #include "i_system.h"
 #include "i_video.h"
 
+// The version for ZDOS: config.h's PACKAGE_VERSION (build.sh),
+// expanded before ZDOS_FILE_VERSION's #
+#define DOOM_FILE_VERSION(a, b, c) ZDOS_FILE_VERSION(a, b, c, 0)
+#define DOOM_FILE_VERSION_OF(a, b, c) DOOM_FILE_VERSION(a, b, c)
+DOOM_FILE_VERSION_OF(ZDOS_DOOM_MAJOR, ZDOS_DOOM_MINOR, ZDOS_DOOM_PATCH);
+
 static bool graphics_on;
 
 void DG_Init(void)

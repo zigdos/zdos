@@ -26,7 +26,8 @@
 - [ ] USB hubs and hot-plugging check on real hardware.
 
 ## Audio
-- [ ] Several programs mixing (music in a background tab); sound for Doom.
+- [ ] Several programs mixing (music in a background tab).
+- [x] Sound for Doom.
 - [ ] virtio-sound (ARM64 on QEMU); ES1370 / ES1371, Trident.
 - [ ] HDA on real machines (Realtek ALC: jacks, amplifiers, quirks).
 - [ ] Sound recording.
