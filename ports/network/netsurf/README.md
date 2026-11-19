@@ -49,32 +49,34 @@ the framebuffer frontend's own "local" encoding is CP1252, which the SDK's
 iconv lacks). Forms are sent in the page's charset, ISO-8859-1 where the
 SDK's iconv has no converter for it.
 
-Downloads: the framebuffer frontend has none of its own, so a link to a
-file NetSurf can't show (ZIP, EXE, ISO ...) is handed to `FETCH`
-(`zdos_download.c`, `download-zdos.patch`). It runs in the background,
-with its messages discarded, and saves into `%HOME%\Downloads` (made if
-missing; `C:\TEMP` without `HOME`), as `FILE-2.ZIP` ... where the name
-exists; other bytes than letters, digits, `.`, `-` and `_` become `_`. The
-status bar shows where it goes. FETCH asks again without NetSurf's
-cookies, logins or form data, and only over http and https; there is no
-progress or end message. Where a download doesn't come, run it by hand to
-see why: `FETCH -o C:\TEMP\FILE.ZIP https://...`.
+Downloads and uploads: the framebuffer frontend has neither, so
+`zdos_dialogs.c` (`dialogs-zdos.patch`) adds small windows in its look.
+A download is NetSurf's own transfer, into `%HOME%\Downloads` (made if
+missing; `C:\TEMP` without `%HOME%`), as `FILE-2.ZIP` ... where the name
+exists; other bytes than letters, digits, `.`, `-` and `_` become `_`. Its
+window shows the bytes and a bar, with Cancel; the status bar says where
+it went. An upload field opens a file chooser at `%HOME%`: folders and
+files, a path to type, OK and Cancel (Enter, Backspace for the parent,
+Escape).
 
 The x86 (BIOS) build is compiled for `NETSURF_ZDOS_X86_CPU` in
 `Makefile.config`: `pentium4` (SSE2) by default, `core2` for SSSE3, or
 `i686` for every Pentium Pro and later. The libraries it links from other
 ports stay i686.
 
-Text is NetSurf's built-in bitmap font (`NETSURF_FB_FONTLIB := internal`:
-8x16, doubled for large sizes).
+Text is drawn by FreeType (`ports/libs/freetype`, `FREETYPE.ZDL`) in the
+fonts of `\SYSTEM\TTF` (`Makefile.config`): Arimo for sans-serif, Tinos
+for serif, IBM Plex Mono for monospace, Lora Italic for cursive, Space
+Grotesk Bold for fantasy. Arimo and Tinos have the widths of Arial and
+Times New Roman, so pages lay out as designed. Up to 12 faces stay open,
+not NetSurf's 6, so the ten are not read again (`fontfaces-zdos.patch`).
 
-## Not finished
+Cookies are kept in `%HOME%\.netsurf\Cookies` (made if missing;
+without `%HOME%`, in memory only) across runs (`cookies-zdos.patch`;
+the frontend's `~/.netsurf` has no `~` to expand on ZDOS).
+NetSurf's options (`Choices`) are looked for in `%HOME%\.netsurf` first,
+then `C:\DATA\NETSURF` (`choices-zdos.patch`).
 
-- **Uploads**: a form's file field (`<input type="file">`, "Browse")
-  does nothing when clicked: the framebuffer frontend has no file chooser
-  (`file_gadget_open` is NetSurf's empty default), so such a form is sent
-  without the file.
-- **Downloads through NetSurf itself**: progress, cancelling, and files
-  behind a login or a form (FETCH has no cookies).
-- **SVG**: off; libsvgtiny needs libdom's XML parser, which needs expat
-  or libxml2 (not ported).
+SVG images come from libsvgtiny (`$ZDOS_PORTS_SRC/libsvgtiny`, or
+`SVGTINY_SRC`), read by NetSurf's HTML parser (`svgtiny-zdos.patch`):
+there is no XML parser. SVGs whose DOCTYPE defines entities lose them.

@@ -9,6 +9,7 @@
 #include "libnsfb.h"
 #include "libnsfb_event.h"
 #include "libnsfb_plot.h"
+#include "libnsfb_plot_util.h"
 #include "nsfb.h"
 #include "surface.h"
 #include "cursor.h"
@@ -47,11 +48,28 @@ static void mark_changed(nsfb_t *nsfb)
 	}
 }
 
+/* NetSurf's own pointer images (arrow, hand over links, caret ...) drawn
+   into the frame by libnsfb, as its SDL surface does: taken away where
+   NetSurf is about to draw (claim), put back by update */
+static int zdos_ram_claim(nsfb_t *nsfb, nsfb_bbox_t *box)
+{
+	struct nsfb_cursor_s *cursor = nsfb->cursor;
+	if (cursor != NULL && cursor->plotted && nsfb_plot_bbox_intersect(box, &cursor->loc)) {
+		nsfb_cursor_clear(nsfb, cursor);
+	}
+	return 0;
+}
+
 static int zdos_cursor(nsfb_t *nsfb, struct nsfb_cursor_s *cursor)
 {
-	zdos_display_cursor(cursor->loc.x0, cursor->loc.y0, true);
+	if (cursor != NULL) {
+		if (cursor->plotted) {
+			nsfb_cursor_clear(nsfb, cursor);
+		}
+		nsfb_cursor_plot(nsfb, cursor);
+	}
 	mark_changed(nsfb);
-	return 0;
+	return true;
 }
 
 static int wheel_remaining;
@@ -110,9 +128,15 @@ static int zdos_ram_initialise(nsfb_t *nsfb)
 		return -1;
 	}
 	zdos_input_area(nsfb->width, nsfb->height);
+	/* Characters as typed, in ZDOS's keyboard layout: */
+	zdos_input_text(true);
+	/* Ctrl+C a key (copy), not the end of the program: */
+	if (zdos->programs->set_ctrl_c != NULL)
+		zdos->programs->set_ctrl_c(true);
 	pointer_x = nsfb->width / 2;
 	pointer_y = nsfb->height / 2;
-	zdos_display_cursor(pointer_x, pointer_y, true);
+	/* Not the display's arrow: NetSurf's pointers (zdos_cursor) */
+	zdos_display_cursor(0, 0, false);
 	return 0;
 }
 
@@ -231,8 +255,22 @@ static bool zdos_ram_input(nsfb_t *nsfb, nsfb_event_t *event, int timeout)
 					NSFB_EVENT_KEY_DOWN : NSFB_EVENT_KEY_UP;
 				event->value.keycode = key;
 				return true;
-			case ZDOS_EVENT_TEXT:
-				continue;
+			case ZDOS_EVENT_TEXT: {
+				/* A character: 0x10000 + its code (NetSurf's
+				   fbtk/event.c, urlbar-zdos.patch) */
+				const uint8_t *t = (const uint8_t *)input.text;
+				uint32_t c = t[0];
+				int more = c >= 0xF0 ? 3 : c >= 0xE0 ? 2 : c >= 0xC0 ? 1 : 0;
+				if (more > 0)
+					c &= 0x3F >> more;
+				for (int i = 1; i <= more; i++)
+					c = c << 6 | (t[i] & 0x3F);
+				if (c < 0x20 || c == 0x7F)
+					continue;
+				event->type = NSFB_EVENT_KEY_DOWN;
+				event->value.keycode = (enum nsfb_key_code_e)(0x10000 + c);
+				return true;
+			}
 			case ZDOS_EVENT_MOUSE_MOTION:
 				pointer_x += input.dx;
 				pointer_y += input.dy;
@@ -293,7 +331,11 @@ static bool zdos_ram_input(nsfb_t *nsfb, nsfb_event_t *event, int timeout)
 
 static int zdos_ram_update(nsfb_t *nsfb, nsfb_bbox_t *box)
 {
+	struct nsfb_cursor_s *cursor = nsfb->cursor;
 	(void)box;
+	if (cursor != NULL && !cursor->plotted) {
+		nsfb_cursor_plot(nsfb, cursor);
+	}
 	mark_changed(nsfb);
 	return 0;
 }
@@ -304,6 +346,7 @@ const nsfb_surface_rtns_t zdos_rtns = {
 	.finalise = zdos_ram_finalise,
 	.geometry = zdos_ram_geometry,
 	.input = zdos_ram_input,
+	.claim = zdos_ram_claim,
 	.update = zdos_ram_update,
 	.cursor = zdos_cursor,
 };

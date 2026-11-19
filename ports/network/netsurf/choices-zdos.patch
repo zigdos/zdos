@@ -1,0 +1,26 @@
+--- a/netsurf/frontends/framebuffer/gui.c
++++ b/netsurf/frontends/framebuffer/gui.c
+@@ -2219,7 +2219,22 @@
+ 		die("NetSurf operation table failed registration");
+         }
+ 
+-	respaths = fb_init_resource_path(NETSURF_FB_RESPATH":"NETSURF_FB_FONTPATH);
++	/* ZDOS: %HOME%\.netsurf searched first (each user's Choices),
++	 * as upstream's ${HOME}/.netsurf; not without HOME (it'd be
++	 * the drive's \.netsurf, everyone's) */
++	{
++		const char *shared = NETSURF_FB_RESPATH":"NETSURF_FB_FONTPATH;
++		const char *home = getenv("HOME");
++		char *path = NULL;
++		if (home != NULL && *home != '\0') {
++			size_t len = strlen(home) + strlen(shared) + 12;
++			path = malloc(len);
++			if (path != NULL)
++				snprintf(path, len, "%s\\.netsurf:%s", home, shared);
++		}
++		respaths = fb_init_resource_path(path != NULL ? path : shared);
++		free(path);
++	}
+ 
+ 	/* initialise logging. Not fatal if it fails but not much we
+ 	 * can do about it either.

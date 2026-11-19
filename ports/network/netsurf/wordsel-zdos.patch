@@ -1,0 +1,44 @@
+--- a/netsurf/content/handlers/html/interaction.c
++++ b/netsurf/content/handlers/html/interaction.c
+@@ -34,6 +34,8 @@
+ #include "utils/messages.h"
+ #include "utils/utils.h"
+ #include "utils/log.h"
++#include "utils/ascii.h"
++#include "utils/utf8.h"
+ #include "utils/nsoption.h"
+ #include "netsurf/content.h"
+ #include "netsurf/browser_window.h"
+@@ -1243,6 +1245,32 @@
+ 				done = true;
+ 			}
+ 
++			/* ZDOS: a double click selects the word there, as
++			 * browsers do (letters, digits, _ and non-ASCII
++			 * bytes), else the one character */
++			if ((mouse & BROWSER_MOUSE_DOUBLE_CLICK) &&
++			    (mouse & BROWSER_MOUSE_CLICK_1)) {
++				const char *t = mas->text.box->text;
++				size_t n = mas->text.box->length;
++				size_t from = idx, to = idx;
++				#define WORD_BYTE(c) ((unsigned char)(c) >= 0x80 || \
++					ascii_is_alphanumerical(c) || (c) == '_')
++				while (from > 0 && WORD_BYTE(t[from - 1]))
++					from--;
++				while (to < n && WORD_BYTE(t[to]))
++					to++;
++				#undef WORD_BYTE
++				if (from == to && to < n)
++					to = utf8_next(t, n, to);
++				if (from < to) {
++					selection_clear(html->sel, true);
++					selection_set_position(html->sel,
++						mas->text.box->byte_offset + from,
++						mas->text.box->byte_offset + to);
++					done = true;
++				}
++			}
++
+ 		} else if (mouse & BROWSER_MOUSE_PRESS_1) {
+ 			sel_owner.none = true;
+ 			selection_clear(html->sel, true);

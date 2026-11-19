@@ -59,7 +59,7 @@
 - [ ] Wi-Fi support.
 
 ## Apps and SDK
-- [ ] NetSurf: SVG; uploads and downloads - GUI Pickers.
+- [x] NetSurf: SVG; uploads and downloads - GUI Pickers.
 - [x] File locks between programs (SQLite too).
 - [ ] SQLite: WAL (shared memory).
 - [ ] `SDL2.ZDL` testing.

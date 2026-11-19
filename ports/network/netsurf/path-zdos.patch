@@ -1,0 +1,31 @@
+--- a/netsurf/frontends/framebuffer/framebuffer.c
++++ b/netsurf/frontends/framebuffer/framebuffer.c
+@@ -41,6 +41,7 @@
+ #include "framebuffer/font.h"
+ #include "framebuffer/bitmap.h"
+ #include "framebuffer/zdos_scale.h"
++#include "framebuffer/zdos_path.h"
+ 
+ /* netsurf framebuffer library handle */
+ static nsfb_t *nsfb;
+@@ -272,8 +273,8 @@
+ 		unsigned int n,
+ 		const float transform[6])
+ {
+-	NSLOG(netsurf, INFO, "path unimplemented");
+-	return NSERROR_OK;
++	/* ZDOS: drawn (zdos_path.c), not left out */
++	return zdos_plot_path(nsfb, pstyle, p, n, transform);
+ }
+ 
+ 
+--- a/netsurf/frontends/framebuffer/Makefile
++++ b/netsurf/frontends/framebuffer/Makefile
+@@ -185,6 +185,7 @@
+ S_FRONTEND += zdos_display.c zdos_input.c
+ S_FRONTEND += zdos_dialogs.c
+ S_FRONTEND += zdos_scale.c
++S_FRONTEND += zdos_path.c
+ 
+ # This is the final source build list
+ # Note this is deliberately *not* expanded here as common and image

@@ -1,0 +1,56 @@
+--- a/netsurf/frontends/framebuffer/gui.c
++++ b/netsurf/frontends/framebuffer/gui.c
+@@ -23,6 +23,8 @@
+ #include <string.h>
+ #include <stdbool.h>
+ #include <stdlib.h>
++#include <stdio.h>
++#include <sys/stat.h>
+ #include <nsutils/time.h>
+ 
+ #include <libnsfb.h>
+@@ -564,13 +566,17 @@
+ static nserror set_defaults(struct nsoption_s *defaults)
+ {
+ 	/* Set defaults for absent option strings */
+-	nsoption_setnull_charp(cookie_file, strdup("~/.netsurf/Cookies"));
+-	nsoption_setnull_charp(cookie_jar, strdup("~/.netsurf/Cookies"));
+-
+-	if (nsoption_charp(cookie_file) == NULL ||
+-	    nsoption_charp(cookie_jar) == NULL) {
+-		NSLOG(netsurf, INFO, "Failed initialising cookie options");
+-		return NSERROR_BAD_PARAMETER;
++	/* ZDOS: no ~ to expand: the cookies in
++	 * %HOME%\.netsurf\Cookies (made if missing), without HOME
++	 * only in memory (a shared folder would show them to all) */
++	const char *home = getenv("HOME");
++	if (home != NULL && *home != '\0') {
++		char cookies[512];
++		snprintf(cookies, sizeof cookies, "%s\\.netsurf", home);
++		mkdir(cookies, 0755);
++		snprintf(cookies, sizeof cookies, "%s\\.netsurf\\Cookies", home);
++		nsoption_setnull_charp(cookie_file, strdup(cookies));
++		nsoption_setnull_charp(cookie_jar, strdup(cookies));
+ 	}
+ 
+ 	/* set system colours for framebuffer ui */
+@@ -651,7 +657,8 @@
+ {
+ 	NSLOG(netsurf, INFO, "gui_quit");
+ 
+-	urldb_save_cookies(nsoption_charp(cookie_jar));
++	if (nsoption_charp(cookie_jar) != NULL)
++		urldb_save_cookies(nsoption_charp(cookie_jar));
+ 
+ 	framebuffer_finalise();
+ }
+@@ -2262,7 +2269,8 @@
+ 
+ 	fbtk_enable_oskb(fbtk);
+ 
+-	urldb_load_cookies(nsoption_charp(cookie_file));
++	if (nsoption_charp(cookie_file) != NULL)
++		urldb_load_cookies(nsoption_charp(cookie_file));
+ 
+ 	/* create an initial browser window */
+ 

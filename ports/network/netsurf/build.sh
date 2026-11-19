@@ -6,6 +6,7 @@ source "$(dirname "$0")/../../common.sh"
 PORT=$ZIGDOS/ports/network/netsurf
 NETSURF_SRC=${NETSURF_SRC:-$SRC_ROOT/netsurf}
 CURL_SRC=${CURL_SRC:-$SRC_ROOT/curl}
+SVGTINY_SRC=${SVGTINY_SRC:-$SRC_ROOT/libsvgtiny}
 BUILD=$ZIGDOS/build/netsurf
 STAGED_SRC=$BUILD/src
 
@@ -14,11 +15,15 @@ STAGED_SRC=$BUILD/src
     die "no NetSurf source tree in $NETSURF_SRC (NETSURF_SRC=...)"
 [ -f "$CURL_SRC/configure" ] ||
     die "no curl source tree in $CURL_SRC (CURL_SRC=...)"
+[ -f "$SVGTINY_SRC/src/svgtiny.c" ] ||
+    die "no libsvgtiny source tree in $SVGTINY_SRC (SVGTINY_SRC=...)"
 command -v rsync >/dev/null || die "rsync is required"
 command -v gperf >/dev/null || die "gperf is required"
 
 mkdir -p "$STAGED_SRC"
 rsync -a --delete "$NETSURF_SRC/" "$STAGED_SRC/"
+# libsvgtiny: the newer one beside NetSurf's
+rsync -a --delete --exclude=.git "$SVGTINY_SRC/" "$STAGED_SRC/libsvgtiny/"
 cp "$PORT/zdos_surface.c" "$STAGED_SRC/libnsfb/src/surface/zdos.c"
 cp "$PORT/Makefile.config" "$STAGED_SRC/netsurf/Makefile.config"
 cp "$PORT/libdom.config.override" "$STAGED_SRC/libdom/Makefile.config.override"
@@ -48,9 +53,17 @@ if ! grep -q 'S_FRONTEND += zdos_display.c zdos_input.c' \
     patch -s -d "$STAGED_SRC" -p1 <"$PORT/framebuffer-zdos.patch" ||
         die "framebuffer-zdos.patch does not apply to $NETSURF_SRC"
 fi
-cp "$PORT/zdos_download.c" "$STAGED_SRC/netsurf/frontends/framebuffer/zdos_download.c"
-patch -s -d "$STAGED_SRC" -p1 <"$PORT/download-zdos.patch" ||
-    die "download-zdos.patch does not apply to $NETSURF_SRC"
+cp "$PORT/zdos_dialogs.c" "$STAGED_SRC/netsurf/frontends/framebuffer/zdos_dialogs.c"
+patch -s -d "$STAGED_SRC" -p1 <"$PORT/dialogs-zdos.patch" ||
+    die "dialogs-zdos.patch does not apply to $NETSURF_SRC"
+cp "$PORT/zdos_scale.c" "$STAGED_SRC/netsurf/frontends/framebuffer/zdos_scale.c"
+cp "$PORT/zdos_scale.h" "$STAGED_SRC/netsurf/frontends/framebuffer/zdos_scale.h"
+cp "$PORT/zdos_path.c" "$STAGED_SRC/netsurf/frontends/framebuffer/zdos_path.c"
+cp "$PORT/zdos_path.h" "$STAGED_SRC/netsurf/frontends/framebuffer/zdos_path.h"
+for p in scale-zdos path-zdos css-ch-zdos urlbar-zdos svgtiny-zdos cookies-zdos choices-zdos wordsel-zdos fontfaces-zdos; do
+    patch -s -d "$STAGED_SRC" -p1 <"$PORT/$p.patch" ||
+        die "$p.patch does not apply to $NETSURF_SRC"
+done
 
 # Makefile.config's wheel setting, for libnsfb's zdos surface:
 natural_scroll=$(sed -n 's/^override NETSURF_ZDOS_NATURAL_SCROLL := *//p' "$PORT/Makefile.config")
@@ -92,6 +105,8 @@ for arch in $(arches "$@"); do
     mkdir -p "$zlib_prefix/include" "$zlib_prefix/lib"
     cp "$ZIGDOS/build/sdk-ports/include/zlib.h" "$ZIGDOS/build/sdk-ports/include/zconf.h" "$zlib_prefix/include/"
     cp "$ZIGDOS/build/sdk-ports/lib/$arch/libz.a" "$zlib_prefix/lib/"
+    # FreeType, for the text (built first if missing):
+    need_port libs/freetype libfreetype.a FREETYPE.ZDL
     # PNG, JPEG and curl's TLS from sdk-ports (built first if missing):
     lib=$ZIGDOS/build/sdk-ports/lib/$arch
     [ -f "$lib/libpng.a" ] || "$ZIGDOS/ports/graphics/libpng/build.sh" "$arch"
@@ -127,6 +142,8 @@ for arch in $(arches "$@"); do
             >"$curl_prefix/lib/pkgconfig/libpng.pc"
         printf 'Name: libwebp\nDescription: libwebp port\nVersion: 1.6\nLibs: -lwebp\nCflags:\n' \
             >"$curl_prefix/lib/pkgconfig/libwebp.pc"
+        printf 'Name: freetype2\nDescription: FreeType port\nVersion: 2.15.0\nLibs: -lfreetype\nCflags: -I%s\n' \
+            "$ZIGDOS/build/sdk-ports/include/freetype2" >"$curl_prefix/lib/pkgconfig/freetype2.pc"
         grep -q '^#define USE_MBEDTLS 1' lib/curl_config.h || { echo "curl configured without mbedTLS"; exit 1; }
     ) >"$curl_obj/build.log" 2>&1 ||
         die "curl build failed for $arch; see $curl_obj/build.log"
@@ -145,7 +162,7 @@ for arch in $(arches "$@"); do
         PKG_CONFIG_LIBDIR="$curl_prefix/lib/pkgconfig:$SRC/inst-framebuffer/lib/pkgconfig" \
             make -j"$(cpus)" TARGET=framebuffer HOST="$host" BUILD="$(cc -dumpmachine)" \
                 CC="$netsurf_cc" AR="$SDK/bin/zdos-ar" BUILD_CC=cc PREFIX="$prefix" \
-                NSLIB_SVGTINY_TARG= NSBUILD_TARG= ZDOS_NATURAL_SCROLL="$natural_scroll" \
+                NSBUILD_TARG= ZDOS_NATURAL_SCROLL="$natural_scroll" \
                 VARIANT=release install
     ) >"$obj/build.log" 2>&1 ||
         die "NetSurf build failed for $arch; see $obj/build.log"

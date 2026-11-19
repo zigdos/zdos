@@ -381,6 +381,7 @@ def run_qemu(args, steps, case_dir, sock, boot_wait=None):
     #   ("text", "FDISK 3")  types it      ("key", "ret")  one key
     #   ("wait", seconds)                  ("shot", name, note)
     #   ("until", done, seconds)  polls done() every 3 s until true
+    #   ("monitor", "mouse_move 5 5")  a QEMU monitor command
     # Waits and limits are for KVM: emulated, they take SLOW times longer.
     # Returns the screenshots taken, as (name, note).
     os.makedirs(case_dir, exist_ok=True)
@@ -401,6 +402,8 @@ def run_qemu(args, steps, case_dir, sock, boot_wait=None):
                 mon.cmd("sendkey " + step[1])
             elif kind == "wait":
                 time.sleep(step[1] * SLOW)
+            elif kind == "monitor":
+                mon.cmd(step[1])
             elif kind == "until":
                 deadline = time.time() + step[2] * SLOW
                 while not step[1]() and time.time() < deadline:

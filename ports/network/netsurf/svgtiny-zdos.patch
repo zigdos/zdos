@@ -1,0 +1,160 @@
+--- a/libsvgtiny/src/svgtiny.c
++++ b/libsvgtiny/src/svgtiny.c
+@@ -14,9 +14,10 @@
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include <string.h>
++#include <strings.h>
+ 
+ #include <dom/dom.h>
+-#include <dom/bindings/xml/xmlparser.h>
++#include <dom/bindings/hubbub/parser.h>
+ 
+ #include "svgtiny.h"
+ #include "svgtiny_internal.h"
+@@ -1142,21 +1143,62 @@
+ }
+ 
+ 
++/* ZDOS: the first <svg> element at or below node, referenced */
++static dom_element *find_svg(dom_node *node)
++{
++	dom_node_type type;
++	dom_string *name;
++	dom_node *child, *next;
++	dom_element *found;
++
++	if (dom_node_get_node_type(node, &type) != DOM_NO_ERR)
++		return NULL;
++	if (type == DOM_ELEMENT_NODE &&
++			dom_node_get_node_name(node, &name) == DOM_NO_ERR &&
++			name != NULL) {
++		bool is_svg = dom_string_byte_length(name) == 3 &&
++			strncasecmp(dom_string_data(name), "svg", 3) == 0;
++		dom_string_unref(name);
++		if (is_svg)
++			return (dom_element *)dom_node_ref(node);
++	}
++	if (dom_node_get_first_child(node, &child) != DOM_NO_ERR)
++		return NULL;
++	while (child != NULL) {
++		found = find_svg(child);
++		if (found != NULL) {
++			dom_node_unref(child);
++			return found;
++		}
++		if (dom_node_get_next_sibling(child, &next) != DOM_NO_ERR)
++			next = NULL;
++		dom_node_unref(child);
++		child = next;
++	}
++	return NULL;
++}
++
+ static svgtiny_code get_svg_element(dom_document *document, dom_element **svg)
+ {
+ 	dom_exception exc;
+ 	dom_string *svg_name;
+ 	lwc_string *svg_name_lwc;
+ 
+-	/* find root <svg> element */
+-	exc = dom_document_get_document_element(document, svg);
++	/* ZDOS: parsed as HTML, the <svg> element sits in <body> */
++	dom_element *root;
++	exc = dom_document_get_document_element(document, &root);
+ 	if (exc != DOM_NO_ERR) {
+ 		return svgtiny_LIBDOM_ERROR;
+ 	}
+-        if (svg == NULL) {
+-                /* no root element */
++	if (root == NULL) {
++		/* no root element */
+ 		return svgtiny_SVG_ERROR;
+-        }
++	}
++	*svg = find_svg((dom_node *)root);
++	dom_node_unref(root);
++	if (*svg == NULL) {
++		return svgtiny_NOT_SVG;
++	}
+ 
+ 	/* ensure root element is <svg> */
+ 	exc = dom_node_get_node_name(*svg, &svg_name);
+@@ -1187,32 +1229,43 @@
+ static svgtiny_code
+ svg_document_from_buffer(uint8_t *buffer, size_t size, dom_document **document_out)
+ {
+-	dom_xml_parser *parser;
+-	dom_xml_error err;
++	/* ZDOS: no XML parser; HTML's (hubbub) reads <svg> as SVG,
++	 * with SVG's mixed-case names and xlink's namespace */
++	dom_hubbub_parser *parser;
++	dom_hubbub_error err;
+ 	dom_document *document;
++	dom_hubbub_parser_params params = {
++		.enc = "UTF-8",
++		.fix_enc = true,
++		.enable_script = false,
++		.script = NULL,
++		.msg = ignore_msg,
++		.ctx = NULL,
++		.daf = NULL,
++	};
+ 
+-	parser = dom_xml_parser_create(NULL, NULL, ignore_msg, NULL, &document);
+-	if (parser == NULL)
++	err = dom_hubbub_parser_create(&params, &parser, &document);
++	if (err != DOM_HUBBUB_OK)
+ 		return svgtiny_LIBDOM_ERROR;
+ 
+-	err = dom_xml_parser_parse_chunk(parser, buffer, size);
+-	if (err != DOM_XML_OK) {
++	err = dom_hubbub_parser_parse_chunk(parser, buffer, size);
++	if (err != DOM_HUBBUB_OK) {
+ 		dom_node_unref(document);
+-		dom_xml_parser_destroy(parser);
++		dom_hubbub_parser_destroy(parser);
+ 		return svgtiny_LIBDOM_ERROR;
+ 	}
+ 
+-	err = dom_xml_parser_completed(parser);
+-	if (err != DOM_XML_OK) {
++	err = dom_hubbub_parser_completed(parser);
++	if (err != DOM_HUBBUB_OK) {
+ 		dom_node_unref(document);
+-		dom_xml_parser_destroy(parser);
++		dom_hubbub_parser_destroy(parser);
+ 		return svgtiny_LIBDOM_ERROR;
+ 	}
+ 
+ 	/* We're done parsing, drop the parser.
+ 	 * We now own the document entirely.
+ 	 */
+-	dom_xml_parser_destroy(parser);
++	dom_hubbub_parser_destroy(parser);
+ 
+ 	*document_out = document;
+ 
+--- a/libsvgtiny/src/svgtiny_gradient.c
++++ b/libsvgtiny/src/svgtiny_gradient.c
+@@ -887,7 +887,8 @@
+ 	}
+ 
+ 	/* ensure element is a linear gradiant */
+-	if (dom_string_isequal(name, state->interned_linearGradient)) {
++	/* ZDOS: in any case: HTML's parser makes names capitals */
++	if (dom_string_caseless_isequal(name, state->interned_linearGradient)) {
+ 		res = svgtiny_parse_linear_gradient(grad_element, grad, state);
+ 	}
+ 
+--- a/libsvgtiny/Makefile
++++ b/libsvgtiny/Makefile
+@@ -47,7 +47,7 @@
+ 		$(shell $(PKGCONFIG) $(PKGCONFIGFLAGS) --libs libdom libwapcaplet)
+ else
+   CFLAGS := $(CFLAGS) -I$(PREFIX)/include
+-  LDFLAGS := $(CFLAGS) -ldom -lwapcaplet -lexpat -lm
++  LDFLAGS := $(CFLAGS) -ldom -lwapcaplet -lhubbub -lm
+ endif
+ 
+ include $(NSBUILD)/Makefile.top

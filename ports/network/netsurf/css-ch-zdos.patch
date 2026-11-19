@@ -1,0 +1,53 @@
+--- a/netsurf/content/handlers/html/html.c
++++ b/netsurf/content/handlers/html/html.c
+@@ -59,6 +59,7 @@
+ 
+ #include "html/html.h"
+ #include "html/private.h"
++#include "html/font.h"
+ #include "html/dom_event.h"
+ #include "html/css.h"
+ #include "html/object.h"
+@@ -303,6 +304,32 @@
+ }
+ 
+ 
++/**
++ * ZDOS: the ch unit as the width of "0" in the element's font, as
++ * CSS defines it; libcss alone takes 0.4em, which makes "108ch" of
++ * a monospace font 72 characters. ex stays libcss's 0.6em.
++ */
++static css_fixed html_unit_measure(void *pw, const css_computed_style *style, css_unit unit)
++{
++	html_content *htmlc = pw;
++	plot_font_style_t fstyle;
++	int width;
++
++	if (style == NULL)
++		style = htmlc->unit_len_ctx.root_style;
++	if (style == NULL)
++		return FMUL(htmlc->unit_len_ctx.font_size_default,
++				unit == CSS_UNIT_CH ? FLTTOFIX(0.4) : FLTTOFIX(0.6));
++	font_plot_style_from_css(&htmlc->unit_len_ctx, style, &fstyle);
++	if (unit == CSS_UNIT_CH &&
++			guit->layout->width(&fstyle, "0", 1, &width) == NSERROR_OK && width > 0) {
++		return css_unit_device2css_px(INTTOFIX(width), htmlc->unit_len_ctx.device_dpi);
++	}
++	/* fstyle.size: points times PLOT_STYLE_SCALE; CSS px are 96 per 72pt */
++	return FMUL(FDIV(FMUL(INTTOFIX(fstyle.size), F_96), FMUL(INTTOFIX(PLOT_STYLE_SCALE), F_72)),
++			unit == CSS_UNIT_CH ? FLTTOFIX(0.4) : FLTTOFIX(0.6));
++}
++
+ static void html_get_dimensions(html_content *htmlc)
+ {
+ 	css_fixed device_dpi = nscss_screen_dpi;
+@@ -335,6 +362,9 @@
+ 
+ 	htmlc->unit_len_ctx.font_size_default = f_size;
+ 	htmlc->unit_len_ctx.font_size_minimum = f_min;
++	/* ZDOS: measured ch (the field is const in libcss's struct) */
++	htmlc->unit_len_ctx.pw = htmlc;
++	*(css_unit_len_measure *)&htmlc->unit_len_ctx.measure = html_unit_measure;
+ }
+ 
+ /* exported function documented in html/html_internal.h */

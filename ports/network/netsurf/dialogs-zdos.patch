@@ -1,0 +1,51 @@
+--- a/netsurf/frontends/framebuffer/Makefile
++++ b/netsurf/frontends/framebuffer/Makefile
+@@ -183,6 +183,7 @@
+ 
+ S_FRONTEND += $(addprefix fbtk/,$(S_FRAMEBUFFER_FBTK))
+ S_FRONTEND += zdos_display.c zdos_input.c
++S_FRONTEND += zdos_dialogs.c
+ 
+ # This is the final source build list
+ # Note this is deliberately *not* expanded here as common and image
+--- a/netsurf/frontends/framebuffer/gui.c
++++ b/netsurf/frontends/framebuffer/gui.c
+@@ -61,6 +61,12 @@
+ 
+ fbtk_widget_t *fbtk;
+ 
++/* ZDOS: downloads and file uploads (zdos_dialogs.c) */
++extern struct gui_download_table zdos_download_table;
++void zdos_file_gadget_open(struct gui_window *gw, struct hlcache_handle *hl,
++			   struct form_control *gadget);
++void zdos_dialogs_keep_on_top(void);
++
+ static bool fb_complete = false;
+ 
+ struct gui_window *input_window = NULL;
+@@ -635,6 +641,8 @@
+ 				fb_complete = true;
+ 		}
+ 
++		/* ZDOS: downloads and file choosers over the page */
++		zdos_dialogs_keep_on_top();
+ 		fbtk_redraw(fbtk);
+ 	}
+ }
+@@ -2161,6 +2169,8 @@
+ 	.set_status = gui_window_set_status,
+ 	.set_pointer = gui_window_set_pointer,
+ 	.place_caret = gui_window_place_caret,
++	/* ZDOS: a file chooser (zdos_dialogs.c) */
++	.file_gadget_open = zdos_file_gadget_open,
+ };
+ 
+ 
+@@ -2189,6 +2199,7 @@
+ 	struct netsurf_table framebuffer_table = {
+ 		.misc = &framebuffer_misc_table,
+ 		.window = &framebuffer_window_table,
++		.download = &zdos_download_table,
+ 		.clipboard = framebuffer_clipboard_table,
+ 		.fetch = framebuffer_fetch_table,
+ 		.utf8 = framebuffer_utf8_table,

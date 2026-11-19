@@ -1,0 +1,12 @@
+--- a/netsurf/frontends/framebuffer/font_freetype.c
++++ b/netsurf/frontends/framebuffer/font_freetype.c
+@@ -148,7 +148,8 @@
+ {
+         FT_Error error;
+         FT_ULong max_cache_size;
+-        FT_UInt max_faces = 6;
++        /* ZDOS: all ten configured faces open, not re-read from disk */
++        FT_UInt max_faces = 12;
+ 	fb_faceid_t *fb_face;
+ 
+         /* freetype library initialise */
