@@ -2,7 +2,7 @@
 
 ZDOS is real-time on the metal and BIOS editions: the highest-priority ready task runs within a bounded delay after its timer or device interrupt, whatever lower-priority tasks do.
 
-The UEFI editions are cooperative, not real-time: without `ExitBootServices` the firmware owns the timer, the interrupts and the drivers, and its disk and network calls run to their end. On UEFI machines the real-time ZDOS is the metal edition, which leaves the firmware and drives the hardware itself.
+The UEFI editions are cooperative, not real-time.
 
 ## Measured
 

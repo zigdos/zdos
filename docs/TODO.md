@@ -53,7 +53,7 @@
 - [ ] NAT as a firewall, hairpin NAT.
 - [ ] Multiple default routers (`LWIP_HOOK_IP4_ROUTE_SRC`); `choose_default()` on link changes.
 - [ ] IPCONFIG / NETSTAT showing NAT's table and the leases.
-- [ ] A promiscuous switch for drivers' cards, ICMP redirects and network unreachable, a spanning tree.
+- [ ] ICMP redirects and network unreachable, a spanning tree.
 - [ ] Improve speed and robustness of network stack.
 - [ ] More cards: PCnet, Intel 8255x, 3c905, eepro100, etc.
 - [ ] HTTPZ: RSA keys, HTTP/2, gzip on free cores, longer variables for CGI.
@@ -63,7 +63,7 @@
 - [x] NetSurf: SVG; uploads and downloads - GUI Pickers.
 - [x] File locks between programs (SQLite too).
 - [ ] SQLite: WAL (shared memory).
-- [ ] `SDL2.ZDL` testing.
+- [x] `SDL2.ZDL` testing.
 - [ ] TinyGL / PortableGL: several cores, a 16-bit TinyGL for BIOS, PortableGL demos: nuklear or models - under question.
 - [x] FFmpeg: text subtitles in ffplay (libass, FreeType), encoders.
 - [x] DOSBox: MIDI device.
@@ -75,7 +75,7 @@
 - [ ] Console in event queues and `socketpair` (Rust terminal programs) - under question.
 - [x] QuickJS-ng with web server and SQLite.
 - [ ] QuickJS-ng: database clients (Mongo, Redis).
-- [ ] File manager: terminal and GUI.
+- [ ] File manager: GUI; terminal implemented.
 - [ ] MPlayer or other player.
 - [ ] Graphical text editors or word processors.
 - [ ] Spreadsheets app.

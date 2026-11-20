@@ -74,7 +74,7 @@ NET0=192.168.60.1/24 192.168.60.254
 BRIDGE=0,1
 ```
 
-A port must take every frame on its wire: ZDOS's own e1000 and virtio-net cards (not ENA) and UEFI's card (where the firmware can) do; a driver's card hears only its own MAC and broadcasts (startup says so).
+A port must take every frame on its wire: ZDOS's own e1000 and virtio-net cards (not ENA), the Realtek drivers' cards and UEFI's card (where the firmware can) do; a card that can't hears only its own MAC and broadcasts (startup says so).
 
 ### NAT
 

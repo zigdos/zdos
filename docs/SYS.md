@@ -10,7 +10,7 @@ export fn zdos_driver_init(api: *const drv.Api, dev: *const drv.Device) callconv
 }
 ```
 
-A network card stays polled unless the driver also calls `api.net_interrupts(&card, dev, &control)`: ZDOS then connects the card's interrupt when the network starts and asks `control` to enable, acknowledge (clear and mask the card's causes, in the interrupt) and rearm (unmask once the frames are taken). Check `api.slots` first, so the driver still loads on an older ZDOS.
+A network card stays polled unless the driver also calls `api.net_interrupts(&card, dev, &control)`: ZDOS then connects the card's interrupt when the network starts and asks `control` to enable, acknowledge (clear and mask the card's causes, in the interrupt) and rearm (unmask once the frames are taken). For a bridge, a driver gives `api.net_promiscuous(&card, &on)`: ZDOS calls `on` when the card becomes a bridge port, and the card takes every frame from then on. Check `api.slots` first, so the driver still loads on an older ZDOS.
 
 Every `sys/*.zig` becomes a driver, so files a driver imports go in a folder of its own (`sys/rtl8169/phy.zig`).
 

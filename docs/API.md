@@ -13,7 +13,7 @@ All functions are reached through their groups (`src/kernel/abi.zig`, mirrored b
 - `setCtrlC(as_key)` (C: `programs->set_ctrl_c(as_key)`): `true` makes Ctrl+C an ordinary key for this program; `false`, the default, lets it end the program.
 - `editLine(row)` (C: `console->edit_line(row)`): a line editor's line starts at screen row `row` (null / -1: done). Other tasks' output then goes there and `readKey` gives `Scan.redraw`: print the prompt and the line again.
 
-**Ctrl+C** ends a program (exit code 255) at its next `print`, `read_key`, `poll_key`, `read_input` or `sleep`. After `setCtrlC(true)` `read_key` returns it as character 3, until the program ends (C: `signal(SIGINT, ...)`).
+**Ctrl+C** ends a program (exit code 255) at its next `print`, `read_key`, `poll_key`, `read_input` or `sleep`, or while it waits in `poll`. After `setCtrlC(true)` `read_key` returns it as character 3, until the program ends (C: `signal(SIGINT, ...)`).
 
 A key press has a **character** (`char`; Enter `'\r'`, Backspace `0x08`, Tab `'\t'`) or, for keys without one, a **scan code** (`scan`): Up `0x01`, Down `0x02`, Right `0x03`, Left `0x04`, Home `0x05`, End `0x06`, Insert `0x07`, Delete `0x08`, Page Up `0x09`, Page Down `0x0A`, F1–F10 `0x0B`–`0x14`, F11 `0x15`, F12 `0x16`, Esc `0x17`.
 

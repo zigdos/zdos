@@ -118,10 +118,10 @@ The disks are filled as follows. `\EFI\BOOT\BOOTX64.EFI`: ZDOS (on the EFI Syste
 - `\GAMES`: from `build/<edition>/GAMES/` (kept).
 - `\LIBS`: libraries from `build/<edition>/LIBS/` and `LIBS_3RD/`.
 - `\DATA`: from `build/DATA/` and `data/`, the programs' data, the same for all editions (kept).
-- `\SYSTEM`: ZDOS's own files: the fonts from `fonts/terminal/` and codepage maps from `fonts/codepages/` in `\SYSTEM\FONTS`, `keyb/` (keyboard layouts) in `\SYSTEM\KEYB`, drivers in `\SYSTEM\DRIVERS`.
+- `\SYSTEM`: ZDOS's own files: the fonts from `fonts/terminal/` and codepage maps from `fonts/codepages/` in `\SYSTEM\FONTS`, `keyb/` (keyboard layouts) in `\SYSTEM\KEYB`, drivers in `\SYSTEM\DRIVERS`. `\SYSTEM\TTF` holds TrueType and OpenType fonts for graphical programs: the static ones (not variable) from `fonts/TTF/` and `$ZDOS_PORTS_SRC/TTF/` (unset: `../TTF/`), at any depth; more can be copied there.
 - `\SCRIPTS`, `\CONF`: from `scripts/` (batch files, Python scripts) and `conf/` (`SYSTEM.CFG`).
 - `\TEMP`: empty, for temporary files (`TEMP=` in `SYSTEM.CFG`).
-- `\DOCS`: this `README.md` and `docs/` that contsains system manuals and `COPYING` that holds related copyright notices and licenses.
+- `\DOCS`: this `README.md` and `docs/` that contains system manuals and `COPYING` that holds related copyright notices and licenses.
 
 ### Running in QEMU
 
@@ -163,7 +163,7 @@ ZDOS boots from a FAT32 USB stick or partition; drive C: may be FAT, ext2 or Min
 1. Format a USB stick as FAT32 and mount it. Or, to have C: on its own partition, make two: a FAT32 one (a few MB are enough for the boot files) and one with FAT, ext2 (`mkfs.ext2`) or Minix (`mkfs.minix -3`, or `build/host/mkmfs3` from `zig build mkmfs3`), and mount both.
 2. Build the edition (`zig build x86_64` or `./build.sh x86_64`), then run `./install.sh metal-x86_64 /run/media/$USER/ZDOS` (example of a folder where the stick is mounted - use your correct path), or with C: apart `sudo ./install.sh metal-x86_64 /run/media/$USER/EFI /run/media/$USER/ZDOS`. It copies system files and drive C:, replacing files already there. It refuses a boot folder that is not on FAT or is this PC's own EFI System Partition. On ext2 or Minix it makes everything root's, with the modes of the images (it must run as root then); macOS can write FAT only.
 3. In the PC's firmware setup, **disable Secure Boot** (ZDOS is not signed), then boot from the stick, usually via the boot menu key (F12, F11, Esc or F8 depending on the manufacturer).
-4. You can install ZDOS onto an SSD or HDD by calling `SYS` command and copying applications and all other system files of the ZDOS release to the first Minix V3 or ext2 or FAT (non-ESP) patition which will become drive C:.
+4. You can install ZDOS onto an SSD or HDD by calling `SYS` command and copying applications and all other system files of the ZDOS release to the first Minix V3 or ext2 or FAT (non-ESP) partition which will become drive C:.
 
 For a Raspberry Pi 4, use `./install.sh uefi-rpi4u <card>`; see [docs/ARM64.md](docs/ARM64.md#raspberry-pi-4-also-pi-400-cm4).
 
@@ -210,7 +210,7 @@ To write your own programs, see [docs/DEVELOPER.md](docs/DEVELOPER.md).
 
 At startup ZDOS finds FAT12/16/32, Minix V3, ext2 partitions and gives them letters:
 
-- **A:, B:** are floppy drives (BIOS/x86 version), as in DOS. Booted from a floppy, ZDOS starts on A: and runs cammand interpreter from there.
+- **A:, B:** are floppy drives (BIOS/x86 version), as in DOS. Booted from a floppy, ZDOS starts on A: and runs command interpreter from there.
 - **C:** is the first non-ESP partition that holds `\APPS` and other system files or the USB stick when ZDOS is booted from one. A boot partition that holds only the boot files, with the system on a second partition gives C: to the partition that has `\APPS`, and gets D: itself. Only if there is no normal partition at all does the ESP become C:.
 - **D:, E:, ...** are the other normal partitions, in firmware order.
 - **No letter** (`--`): **EFI System Partitions** (other than C:), which hold the boot loaders, and partitions flagged "hidden" or "no drive letter", like Windows recovery partitions. This keeps them from being changed by accident. `DRIVES` lists them; `DISKLET` gives them letters when you need them.
@@ -233,7 +233,7 @@ Type a drive letter and a colon to switch drives: `D:`. Each drive remembers its
 
 - Both `\` and `/` work as separators: `DOCS\WORK` and `DOCS/WORK` are the same.
 - `.` is the current directory, `..` the parent, a leading `\` the root of the drive.
-- A path can start with a drive: `E:\OLD.TXT`, or `D:REPORT.TXT` (in D:'s current directory). For POSIX comatibility: `/E:/OLD.TXT` works as `E:\OLD.TXT`.
+- A path can start with a drive: `E:\OLD.TXT`, or `D:REPORT.TXT` (in D:'s current directory). For POSIX compatibility: `/E:/OLD.TXT` works as `E:\OLD.TXT`.
 - On FAT drives names are not case-sensitive: `readme.txt` finds `README.TXT`. On ext2 and Minix drives letter case counts, as on Linux: `readme.txt` and `README.TXT` are two files.
 - Names on ext2 and Minix drives may hold any character but `\`, `/` and the 0 byte, as on Unix; names on FAT drives can not hold `" * : < > ? |`. A name that starts with one letter and `:` reads as a drive: write `.\a:b`.
 - For programs ported from Unix, `/dev/null` is `NUL`, `/dev/tty` the keyboard and screen, `/dev/stdin`, `/dev/stdout` and `/dev/stderr` the program's standard streams, and `/tmp` (and what is in it) the `TEMP` folder (`C:\TEMP` if other `TEMP` is not set).
@@ -309,7 +309,7 @@ ZDOS has three editions: BIOS (x86-32), UEFI (x86-64, ARM64) and Metal (x86-64, 
 | CPU faults as signals   | [•]  |  -   |  [•]  |
 | Memory protection       |  -   |  -   |   -   |
 
-BIOS and UEFI reach some devices through the firmware rather than their own drivers. UEFI multitasking is cooperative, and other cores run only jobs there.
+BIOS and UEFI reach some devices through the firmware rather than their own drivers.
 
 ---
 
