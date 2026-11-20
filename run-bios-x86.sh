@@ -69,8 +69,12 @@ exec qemu-system-i386 \
     "${other_disks[@]}" \
     -boot $boot \
     -vga std -display $display \
+    -serial mon:stdio \
     -rtc base=localtime \
     -netdev user,id=net0 -device e1000e,netdev=net0 \
     -audiodev $audio,id=snd -machine pcspk-audiodev=snd \
-    -device intel-hda -device hda-duplex,audiodev=snd \
+    -device ac97,audiodev=snd \
     "$@"
+
+# note: soundblaster 16 does not work with display sdl
+# and generally not compatible with qemu
