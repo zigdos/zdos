@@ -220,6 +220,8 @@ const cr_stop_req = 0x80;
 const rx_accept_own = 0x02;
 const rx_accept_broadcast = 0x08;
 const rx_accept_bits: u32 = 0x3F; // all, own, multi, broad, runts, errors
+// Set by promiscuous (a bridge port): every address and multicast
+var rx_accept_all: u32 = 0;
 const link_ok = 0x02; // PHY_STATUS
 const full_duplex = 0x01;
 const status_10m = 0x04;
@@ -1048,9 +1050,10 @@ fn start() void {
     }
     lockConfig();
 
-    w32(MAR0, 0);
-    w32(MAR0 + 4, 0);
-    w32(RXCFG, (r32(RXCFG) & ~rx_accept_bits) | rx_accept_own | rx_accept_broadcast);
+    const multicast: u32 = if (rx_accept_all != 0) 0xFFFF_FFFF else 0;
+    w32(MAR0, multicast);
+    w32(MAR0 + 4, multicast);
+    w32(RXCFG, (r32(RXCFG) & ~rx_accept_bits) | rx_accept_own | rx_accept_broadcast | rx_accept_all);
     w8(CR, cr_rx | cr_tx);
     running = true;
 }
@@ -1324,6 +1327,20 @@ export fn zdos_driver_init(a: *const drv.Api, dev: *const drv.Device) callconv(d
     if (!api.register_net(&card)) return false;
     // A ZDOS without net_interrupts polls:
     if (api.slots * @sizeOf(usize) >= @offsetOf(drv.Api, "net_interrupts")) _ = api.net_interrupts(&card, dev, &control);
+    if (api.slots * @sizeOf(usize) >= @offsetOf(drv.Api, "net_promiscuous")) _ = api.net_promiscuous(&card, &promiscuous);
+    return true;
+}
+
+// Every frame, as if_re.c's IFF_PROMISC without its runts and
+// errors: all addresses and multicasts (the hash table all ones);
+// a restart keeps it
+fn promiscuous(_: ?*anyopaque) callconv(drv.cc) bool {
+    rx_accept_all = 0x01 | 0x04;
+    if (running) {
+        w32(MAR0, 0xFFFF_FFFF);
+        w32(MAR0 + 4, 0xFFFF_FFFF);
+        w32(RXCFG, r32(RXCFG) | rx_accept_all);
+    }
     return true;
 }
 

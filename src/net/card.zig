@@ -15,6 +15,7 @@ pub const Card = struct {
     driver: ?*const drv.NetCard = null, // else the platform's card `builtin`
     builtin: usize = 0,
     control: ?drv.NetControl = null, // a driver's, once its interrupts are connected
+    promiscuous: ?drv.NetPromiscuous = null, // a driver's switch to every frame
     acked_here: bool = false, // ack from the network's loop (no handler on core 0)
 };
 
@@ -36,7 +37,7 @@ pub fn start(how: platform.NetInterrupt) void {
     if (drivers.available) {
         for (drivers.net_cards[0..drivers.net_card_count], 0..) |c, i| {
             if (count == max) return;
-            cards[count] = .{ .mac = c.mac, .name = c.name[0..@min(c.name_len, c.name.len)], .driver = c };
+            cards[count] = .{ .mac = c.mac, .name = c.name[0..@min(c.name_len, c.name.len)], .driver = c, .promiscuous = drivers.net_promiscuous[i] };
             if (drivers.net_controls[i]) |ctl| connect(&cards[count], ctl, drivers.net_devices[i], how);
             count += 1;
         }
@@ -71,10 +72,13 @@ pub fn linkUp(i: usize) bool {
 }
 
 // Every frame, not only its own address's: false if the card
-// can't (a driver's: drv.NetCard has no such setting)
+// can't (a driver's without net_promiscuous)
 pub fn promiscuous(i: usize) bool {
     const c = &cards[i];
-    if (c.driver != null) return false;
+    if (c.driver) |d| {
+        const on = c.promiscuous orelse return false;
+        return on(d.ctx);
+    }
     return platform.net.promiscuous(c.builtin);
 }
 

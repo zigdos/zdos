@@ -6,7 +6,7 @@
 #   ZDOS_EDITION=bios ZDOS_ARCH=x86 python3 tests/net/route-tests.py
 # CASE: router (A - R - B, ROUTING=true), norouting, bridge (A - BR -
 # B, BRIDGE=0,1); default all. --rtl8139: R's / BR's second card is an
-# RTL8139 (the bridge then passes only broadcasts from that side).
+# RTL8139 (a driver's card, promiscuous through net_promiscuous).
 import os
 import shutil
 import subprocess
@@ -240,12 +240,9 @@ def bridge_case(edition, d, port, rtl):
         result("BR: the bridge has card 0's MAC", f"Physical address . . : {mac_text(4, 1)}" in ipc)
         pb, pa = a.read("PING-B.TXT"), b.read("PING-A.TXT")
         # Same segment: no router, the TTL stays 255:
-        if rtl:
-            result("A pings B across the bridge: not through a driver's card (not promiscuous)", "Reply from 192.168.30.20" not in pb, pb[-160:])
-        else:
-            result("A pings B across the bridge", "Reply from 192.168.30.20" in pb and "TTL=255" in pb, pb[-160:])
-            result("B pings A across the bridge", "Reply from 192.168.30.10" in pa and "TTL=255" in pa, pa[-160:])
-            result("A's ARP has B's own MAC (the bridge is transparent)", mac_text(6, 1) in a.read("ARP.TXT"), a.read("ARP.TXT")[-200:])
+        result("A pings B across the bridge", "Reply from 192.168.30.20" in pb and "TTL=255" in pb, pb[-160:])
+        result("B pings A across the bridge", "Reply from 192.168.30.10" in pa and "TTL=255" in pa, pa[-160:])
+        result("A's ARP has B's own MAC (the bridge is transparent)", mac_text(6, 1) in a.read("ARP.TXT"), a.read("ARP.TXT")[-200:])
         for name, m in (("A", a), ("B", b)):
             p = m.read("PING-BR.TXT")
             result(f"{name} pings the bridge's own address", "Reply from 192.168.30.1" in p, p[-160:])

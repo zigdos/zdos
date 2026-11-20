@@ -23,6 +23,8 @@ pub var net_card_count: usize = 0;
 // net_interrupts' control and device, per card (null: polled)
 pub var net_controls: [max_net_cards]?drv.NetControl = @splat(null);
 pub var net_devices: [max_net_cards]pci.PciDeviceLocation = undefined;
+// net_promiscuous' switch, per card (null: own frames only)
+pub var net_promiscuous: [max_net_cards]?drv.NetPromiscuous = @splat(null);
 // The sound card, for sound.zig
 pub var sound_card: ?*const drv.SoundCard = null;
 
@@ -143,6 +145,7 @@ const api: drv.Api = .{
     .alloc_isa_dma = allocIsaDma,
     .attach_interrupt = attachInterrupt,
     .net_interrupts = netInterrupts,
+    .net_promiscuous = netPromiscuous,
 };
 
 // The PCI device a driver was started for
@@ -183,6 +186,15 @@ fn netInterrupts(card: *const drv.NetCard, dev: *const drv.Device, control: drv.
         if (c != card) continue;
         net_controls[i] = control;
         net_devices[i] = loc;
+        return true;
+    }
+    return false;
+}
+
+fn netPromiscuous(card: *const drv.NetCard, on: drv.NetPromiscuous) callconv(drv.cc) bool {
+    for (net_cards[0..net_card_count], 0..) |c, i| {
+        if (c != card) continue;
+        net_promiscuous[i] = on;
         return true;
     }
     return false;

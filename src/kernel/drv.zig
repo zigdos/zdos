@@ -106,6 +106,10 @@ pub const NetIrq = struct {
 };
 pub const NetControl = *const fn (ctx: ?*anyopaque, op: u32) callconv(cc) bool;
 
+// What net_promiscuous gives: the card takes every frame from
+// then on (a bridge port), true if it can
+pub const NetPromiscuous = *const fn (ctx: ?*anyopaque) callconv(cc) bool;
+
 pub const Api = extern struct {
     slots: usize,
     // A line for the screen (startup messages)
@@ -143,6 +147,10 @@ pub const Api = extern struct {
     // starts; false if this ZDOS can't (the card stays polled).
     // card.ctx is control's ctx.
     net_interrupts: *const fn (card: *const NetCard, dev: *const Device, control: NetControl) callconv(cc) bool,
+    // A registered card's switch to every frame, asked when the
+    // card becomes a bridge port; false if this ZDOS can't (the
+    // card keeps to its own frames). card.ctx is on's ctx.
+    net_promiscuous: *const fn (card: *const NetCard, on: NetPromiscuous) callconv(cc) bool,
 };
 
 // A driver's start: true if it drives the device

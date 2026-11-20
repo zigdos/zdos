@@ -282,7 +282,7 @@ fn restartReceive() void {
     wr(RBSTART, u32, @truncate(@intFromPtr(ring)));
     rx_at = 0;
     wr(CR, u8, cr_rx | cr_tx);
-    wr(RCR, u32, rcr);
+    wr(RCR, u32, rcr | accept_all);
     wr(CAPR, u16, 0 -% @as(u16, 16));
 }
 
@@ -293,6 +293,8 @@ fn linkUp(_: ?*anyopaque) callconv(drv.cc) bool {
 // Own address and broadcasts, unlimited DMA bursts, 64 KiB ring
 // (RBLEN 11), no receive FIFO threshold.
 const rcr: u32 = 0x02 | 0x08 | (7 << 8) | (3 << 11) | (7 << 13);
+// Set by promiscuous (a bridge port): every address and multicast
+var accept_all: u32 = 0;
 
 var card: drv.NetCard = .{
     .mac = undefined,
@@ -367,6 +369,17 @@ export fn zdos_driver_init(a: *const drv.Api, dev: *const drv.Device) callconv(d
     if (!api.register_net(&card)) return false;
     // A ZDOS without net_interrupts polls:
     if (api.slots * @sizeOf(usize) >= @offsetOf(drv.Api, "net_interrupts")) _ = api.net_interrupts(&card, dev, &control);
+    if (api.slots * @sizeOf(usize) >= @offsetOf(drv.Api, "net_promiscuous")) _ = api.net_promiscuous(&card, &promiscuous);
+    return true;
+}
+
+// Every frame, as MINIX's NDEV_MODE_PROMISC: all addresses (AAP)
+// and multicasts (AM, the hash table all ones)
+fn promiscuous(_: ?*anyopaque) callconv(drv.cc) bool {
+    accept_all = 0x01 | 0x04;
+    wr(MAR0, u32, 0xFFFF_FFFF);
+    wr(MAR0 + 4, u32, 0xFFFF_FFFF);
+    wr(RCR, u32, rcr | accept_all);
     return true;
 }
 
