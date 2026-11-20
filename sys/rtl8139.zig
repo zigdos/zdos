@@ -1,7 +1,8 @@
-// RTL8139.SYS: Realtek RTL8129/8139 and clones, 10/100 Mbit/s. One 8 KiB
-// receive ring with WRAP (a frame never splits at its end), 4 transmit
-// buffers in turn. I/O ports on x86, else memory (BAR1). Its wired
-// interrupt where ZDOS routes one (BIOS edition), else polled.
+// RTL8139.SYS: Realtek RTL8129/8139 and clones, 10/100 Mbit/s. One
+// 64 KiB receive ring without WRAP, as MINIX's and the BSDs' (a frame
+// may split at its end), 4 transmit buffers in turn. I/O ports on x86,
+// else memory (BAR1). Its wired interrupt where ZDOS routes one (BIOS
+// edition), else polled.
 const std = @import("std");
 const builtin = @import("builtin");
 const drv = @import("drv");
@@ -209,8 +210,8 @@ const rx_ok = 0x0001;
 const int_causes: u16 = 0x0001 | 0x0002 | 0x0010 | 0x0020 | 0x0040;
 const rx_unfinished = 0xFFF0;
 
-const ring_size = 8192;
-const ring_pages = 3; // ring, 16 bytes, a frame past its end
+const ring_size = 65536;
+const ring_pages = 17; // the ring and the card's 16 bytes past it
 const tx_count = 4;
 const tx_size = 2048;
 const max_frame = 1514;
@@ -261,7 +262,13 @@ fn receive(_: ?*anyopaque, buf: [*]u8, max: usize) callconv(drv.cc) isize {
         }
         const len: usize = size - 4;
         const fits = len <= max;
-        if (fits) @memcpy(buf[0..len], head[4..][0..len]);
+        if (fits) {
+            // In two parts when it wraps past the ring's end:
+            const at = (@as(usize, rx_at) + 4) & (ring_size - 1);
+            const first = @min(len, ring_size - at);
+            @memcpy(buf[0..first], ring[at..][0..first]);
+            @memcpy(buf[first..len], ring[0 .. len - first]);
+        }
         rx_at = @intCast((@as(u32, rx_at) + size + 4 + 3) & ~@as(u32, 3) & (ring_size - 1));
         wr(CAPR, u16, rx_at -% 16); // CAPR trails the read position by 16
         if (fits) return @intCast(len);
@@ -283,9 +290,9 @@ fn linkUp(_: ?*anyopaque) callconv(drv.cc) bool {
     return rd(MSR, u8) & msr_link_fail == 0;
 }
 
-// Own address and broadcasts, WRAP, unlimited DMA bursts, 8 KiB ring,
-// no receive FIFO threshold.
-const rcr: u32 = 0x02 | 0x08 | (1 << 7) | (7 << 8) | (7 << 13);
+// Own address and broadcasts, unlimited DMA bursts, 64 KiB ring
+// (RBLEN 11), no receive FIFO threshold.
+const rcr: u32 = 0x02 | 0x08 | (7 << 8) | (3 << 11) | (7 << 13);
 
 var card: drv.NetCard = .{
     .mac = undefined,
